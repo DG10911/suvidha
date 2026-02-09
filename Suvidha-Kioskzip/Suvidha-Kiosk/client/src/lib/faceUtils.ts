@@ -378,7 +378,8 @@ export async function performLivenessCheck(
   onProgress?: (step: string, status: "checking" | "passed" | "failed") => void,
   onInstruction?: (instruction: string) => void,
   onFrameCapture?: (frameUrl: string, frameIndex: number) => void,
-  onFaceUpdate?: (faceBox: { x: number; y: number; width: number; height: number }) => void
+  onFaceUpdate?: (faceBox: { x: number; y: number; width: number; height: number }) => void,
+  onBlinkScore?: (eyeHeight: number, baseline: number, closeTh: number, openTh: number, state: string) => void
 ): Promise<LivenessResult> {
   await loadFaceModels();
 
@@ -510,19 +511,20 @@ export async function performLivenessCheck(
   let blinkDetected = false;
   let motionFound = false;
 
-  const EYELID_CLOSE_THRESHOLD = 0.015;
-  const EYELID_OPEN_THRESHOLD = 0.022;
+  const CLOSE_RATIO = 0.55;
+  const OPEN_RATIO = 0.80;
   const BLINK_MIN_MS = 80;
   const BLINK_MAX_MS = 700;
   const MOTION_THRESHOLD = 0.009;
   const WARMUP_MS = 1200;
+  const BASELINE_DURATION_MS = 500;
 
   if (mediapipeLandmarker) {
     let eyeState: "OPEN" | "CLOSED" = "OPEN";
     let blinkStartTime = 0;
     let blinkCount = 0;
     const blinkStart = Date.now();
-    const blinkTimeout = 8000;
+    const blinkTimeout = 10000;
     const blinkPoll = 60;
 
     type NosePos = { x: number; y: number };
@@ -533,7 +535,17 @@ export async function performLivenessCheck(
     let faceDropStart = 0;
     const FACE_DROP_TOLERANCE_MS = 200;
 
-    console.log("[Blink] Starting landmark-based eyelid blink detection (warmup:", WARMUP_MS, "ms)");
+    let eyeBaselineSum = 0;
+    let baselineFrameCount = 0;
+    let eyeBaseline = 0;
+    let baselineCalibrated = false;
+    let baselineStartTime = 0;
+    let CLOSE_TH = 0;
+    let OPEN_TH = 0;
+
+    let latestEyeHeight = 0;
+
+    console.log("[Blink] Starting baseline-calibrated eyelid blink detection (warmup:", WARMUP_MS, "ms, baseline:", BASELINE_DURATION_MS, "ms)");
 
     while (Date.now() - blinkStart < blinkTimeout) {
       const now = performance.now();
@@ -565,23 +577,63 @@ export async function performLivenessCheck(
 
           const leftEyelidDist = Math.abs(lm[159].y - lm[145].y);
           const rightEyelidDist = Math.abs(lm[386].y - lm[374].y);
-          const avgEyelid = (leftEyelidDist + rightEyelidDist) / 2;
+          const eyeHeight = (leftEyelidDist + rightEyelidDist) / 2;
+          latestEyeHeight = eyeHeight;
 
-          if (avgEyelid < EYELID_CLOSE_THRESHOLD && eyeState === "OPEN") {
-            eyeState = "CLOSED";
-            blinkStartTime = now;
-            console.log("[Blink] CLOSED, eyelid:", avgEyelid.toFixed(5));
+          if (!baselineCalibrated) {
+            if (baselineStartTime === 0) baselineStartTime = now;
+
+            if (now - baselineStartTime < BASELINE_DURATION_MS) {
+              eyeBaselineSum += eyeHeight;
+              baselineFrameCount++;
+              if (mpResult.faceLandmarks.length > 0) {
+                const nose = lm[1];
+                if (lastNose) {
+                  const dx = Math.abs(nose.x - lastNose.x);
+                  const dy = Math.abs(nose.y - lastNose.y);
+                  const drift = dx + dy;
+                  if (drift > MOTION_THRESHOLD) {
+                    console.log("[MediaPipe] Motion detected during baseline, drift:", drift.toFixed(4));
+                    motionFound = true;
+                  }
+                }
+                lastNose = { x: nose.x, y: nose.y };
+              }
+              await new Promise(r => setTimeout(r, blinkPoll));
+              continue;
+            }
+
+            if (baselineFrameCount > 0) {
+              eyeBaseline = eyeBaselineSum / baselineFrameCount;
+              CLOSE_TH = eyeBaseline * CLOSE_RATIO;
+              OPEN_TH = eyeBaseline * OPEN_RATIO;
+              baselineCalibrated = true;
+              console.log("[Blink] Baseline eye height:", eyeBaseline.toFixed(4), "(" + baselineFrameCount + " frames)");
+              console.log("[Blink] CLOSE_TH:", CLOSE_TH.toFixed(4), "OPEN_TH:", OPEN_TH.toFixed(4));
+              onBlinkScore?.(eyeHeight, eyeBaseline, CLOSE_TH, OPEN_TH, eyeState);
+              onInstruction?.("Blink naturally once");
+            }
           }
 
-          if (avgEyelid > EYELID_OPEN_THRESHOLD && eyeState === "CLOSED") {
-            const duration = now - blinkStartTime;
-            console.log("[Blink] OPEN, duration:", duration.toFixed(0), "ms, eyelid:", avgEyelid.toFixed(5));
+          if (baselineCalibrated) {
+            onBlinkScore?.(eyeHeight, eyeBaseline, CLOSE_TH, OPEN_TH, eyeState);
 
-            if (duration >= BLINK_MIN_MS && duration <= BLINK_MAX_MS) {
-              blinkCount++;
-              console.log("[Blink] VALID BLINK #" + blinkCount + " (duration: " + duration.toFixed(0) + "ms)");
+            if (eyeHeight < CLOSE_TH && eyeState === "OPEN") {
+              eyeState = "CLOSED";
+              blinkStartTime = now;
+              console.log("[Blink] CLOSED, eyelid:", eyeHeight.toFixed(5));
             }
-            eyeState = "OPEN";
+
+            if (eyeHeight > OPEN_TH && eyeState === "CLOSED") {
+              const duration = now - blinkStartTime;
+              console.log("[Blink] OPEN, duration:", duration.toFixed(0), "ms, eyelid:", eyeHeight.toFixed(5));
+
+              if (duration >= BLINK_MIN_MS && duration <= BLINK_MAX_MS) {
+                blinkCount++;
+                console.log("[Blink] VALID BLINK #" + blinkCount + " (duration: " + duration.toFixed(0) + "ms)");
+              }
+              eyeState = "OPEN";
+            }
           }
 
           const nose = lm[1];

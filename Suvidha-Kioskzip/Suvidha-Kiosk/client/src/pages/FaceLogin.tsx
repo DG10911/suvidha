@@ -41,6 +41,7 @@ export default function FaceLogin() {
   const [instruction, setInstruction] = useState("");
   const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
   const faceBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [blinkScore, setBlinkScore] = useState<{ eyeHeight: number; baseline: number; closeTh: number; openTh: number; state: string } | null>(null);
   const overlayAnimRef = useRef<number>(0);
   const scanLineRef = useRef(0);
   const frameCountRef = useRef(0);
@@ -316,6 +317,7 @@ export default function FaceLogin() {
     }
 
     setStep("liveness");
+    setBlinkScore(null);
     const steps = initLivenessSteps().map(s => ({ ...s, status: "pending" as const }));
     setLivenessSteps(steps);
     setScanProgress(0);
@@ -341,6 +343,9 @@ export default function FaceLogin() {
       },
       (faceBox) => {
         faceBoxRef.current = faceBox;
+      },
+      (eyeHeight, baseline, closeTh, openTh, state) => {
+        setBlinkScore({ eyeHeight, baseline, closeTh, openTh, state });
       }
     );
 
@@ -536,6 +541,51 @@ export default function FaceLogin() {
                   >
                     {instruction}
                   </motion.div>
+                )}
+
+                {blinkScore && step === "liveness" && (
+                  <div className="bg-black/80 backdrop-blur-sm rounded-xl px-4 py-2 font-mono text-xs space-y-1 min-w-[260px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-cyan-400">EYE HEIGHT</span>
+                      <span className={`font-bold ${
+                        blinkScore.eyeHeight < blinkScore.closeTh ? "text-red-400" :
+                        blinkScore.eyeHeight < blinkScore.openTh ? "text-yellow-400" :
+                        "text-green-400"
+                      }`}>{blinkScore.eyeHeight.toFixed(4)}</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2 relative overflow-hidden">
+                      <div
+                        className="absolute left-0 top-0 h-full bg-red-500/40 rounded-l-full"
+                        style={{ width: `${Math.min((blinkScore.closeTh / blinkScore.baseline) * 100, 100)}%` }}
+                      />
+                      <div
+                        className="absolute top-0 h-full bg-yellow-500/40"
+                        style={{
+                          left: `${Math.min((blinkScore.closeTh / blinkScore.baseline) * 100, 100)}%`,
+                          width: `${Math.min(((blinkScore.openTh - blinkScore.closeTh) / blinkScore.baseline) * 100, 100)}%`
+                        }}
+                      />
+                      <div
+                        className="absolute top-0 h-full rounded-full bg-white shadow-sm shadow-white/50"
+                        style={{
+                          left: `${Math.min(Math.max((blinkScore.eyeHeight / (blinkScore.baseline * 1.2)) * 100, 0), 100)}%`,
+                          width: "4px",
+                          transform: "translateX(-2px)"
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-red-400">CLOSE {blinkScore.closeTh.toFixed(4)}</span>
+                      <span className="text-yellow-400">OPEN {blinkScore.openTh.toFixed(4)}</span>
+                      <span className="text-gray-400">BASE {blinkScore.baseline.toFixed(4)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-gray-400">STATE:</span>
+                      <span className={`font-bold ${
+                        blinkScore.state === "CLOSED" ? "text-red-400 animate-pulse" : "text-green-400"
+                      }`}>{blinkScore.state}</span>
+                    </div>
+                  </div>
                 )}
 
                 {capturedFrames.length > 0 && (
