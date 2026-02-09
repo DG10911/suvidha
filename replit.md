@@ -14,7 +14,9 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Captured frame thumbnails shown during verification
 - Core checks (face, texture, screen, eyes, identity) ALL must pass
 - Liveness: blink OR motion (either proves live person, not both required)
-- 700ms warm-up delay before blink/motion evaluation starts
+- 1200ms warm-up delay before blink/motion evaluation (MediaPipe stabilizes via detectForVideo calls during warmup)
+- Blink thresholds: close>0.30, open<0.20, consecutive 2+ frames, timing 80-700ms, 200ms face-drop tolerance during CLOSED state
+- Motion threshold: 0.009 (frame-to-frame MediaPipe nose landmark drift)
 - Duplicate face prevention on server side (0.45 threshold)
 - Twilio integration connected for OTP/SMS
 
@@ -52,10 +54,10 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
 - Steps: face detect (5 frames) → texture → screen check → eyes → blink/motion (OR logic) → identity
 - Face detection: retry with 3 configs (512/416/320) for robust detection across lighting/distances
-- Blink detection: MediaPipe FaceLandmarker blendshapes (eyeBlinkLeft/eyeBlinkRight scores 0-1), close>0.35, open<0.15, consecutive 2+ frames required, time-validated (60-600ms), 60ms polling, 700ms warmup
-- Blink uses state machine (OPEN→CLOSED→OPEN) with duration check, falls back to face-api.js eye height if MediaPipe unavailable
+- Blink detection: MediaPipe FaceLandmarker blendshapes (eyeBlinkLeft/eyeBlinkRight scores 0-1), close>0.30, open<0.20, consecutive 2+ frames required, time-validated (80-700ms), 60ms polling, 1200ms warmup
+- Blink uses state machine (OPEN→CLOSED→OPEN) with duration check, 200ms face-drop tolerance during CLOSED state, falls back to face-api.js eye height if MediaPipe unavailable
 - Liveness gate: blink OR motion must pass (not both required) - industry-standard approach
-- Motion detection: MediaPipe nose landmark drift (threshold 0.012), falls back to face-api.js frame-to-frame nose drift
+- Motion detection: MediaPipe nose landmark drift (threshold 0.009), falls back to face-api.js frame-to-frame nose drift
 - Blink window: 8 seconds with guided instructions
 - Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 4+ indicators)
 - Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
