@@ -271,11 +271,19 @@ function captureFrameAsDataURL(canvas: HTMLCanvasElement): string {
 }
 
 async function detectOnce(video: HTMLVideoElement) {
-  const detection = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
-    .withFaceLandmarks(true)
-    .withFaceDescriptor();
-  return detection || null;
+  const configs = [
+    { inputSize: 512, scoreThreshold: 0.4 },
+    { inputSize: 416, scoreThreshold: 0.35 },
+    { inputSize: 320, scoreThreshold: 0.3 },
+  ];
+  for (const cfg of configs) {
+    const detection = await faceapi
+      .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions(cfg))
+      .withFaceLandmarks(true)
+      .withFaceDescriptor();
+    if (detection) return detection;
+  }
+  return null;
 }
 
 async function captureFrameData(video: HTMLVideoElement, detection: any) {
@@ -381,9 +389,9 @@ export async function performLivenessCheck(
     (data) => {
       straightFrames.push(data);
       onFaceUpdate?.(data.position);
-      return straightFrames.length >= 3;
+      return straightFrames.length >= 5;
     },
-    8000, 400, allFrames
+    12000, 300, allFrames
   );
 
   if (!faceFound || straightFrames.length < 3) {
@@ -399,22 +407,20 @@ export async function performLivenessCheck(
 
   // ── STEP 2: Texture analysis (runs on collected frames) ──
   onProgress?.("textureAnalysis", "checking");
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 200));
   const textures = straightFrames.map(f => f.texture);
   const avgTexture = textures.reduce((a, b) => a + b, 0) / textures.length;
   console.log("[Liveness] Texture variance:", avgTexture);
-  if (avgTexture < 80) {
-    result.checks.textureAnalysis = false;
-    onProgress?.("textureAnalysis", "failed");
+  result.checks.textureAnalysis = avgTexture >= 50;
+  onProgress?.("textureAnalysis", result.checks.textureAnalysis ? "passed" : "failed");
+  if (!result.checks.textureAnalysis) {
     result.message = "Flat texture detected - this appears to be a photo or screen, not a real face.";
     return result;
   }
-  result.checks.textureAnalysis = true;
-  onProgress?.("textureAnalysis", "passed");
 
   // ── STEP 3: Screen detection (runs on collected frames) ──
   onProgress?.("screenDetection", "checking");
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 200));
   const avgMoire = straightFrames.reduce((a, b) => a + b.moire, 0) / straightFrames.length;
   const avgReflection = straightFrames.reduce((a, b) => a + b.reflection, 0) / straightFrames.length;
   const avgBlueRatio = straightFrames.reduce((a, b) => a + b.color.blueRatio, 0) / straightFrames.length;
@@ -432,16 +438,18 @@ export async function performLivenessCheck(
   });
 
   let screenScore = 0;
-  if (avgMoire > 0.25) screenScore += 2;
-  if (avgReflection > 0.08) screenScore += 1;
-  if (avgBlueRatio > 0.20) screenScore += 2;
-  if (avgSatVariance < 0.002) screenScore += 1;
-  if (avgColorVariance < 150) screenScore += 1;
-  if (avgBrightnessUniformity < 200) screenScore += 1;
+  if (avgMoire > 0.30) screenScore += 2;
+  else if (avgMoire > 0.20) screenScore += 1;
+  if (avgReflection > 0.10) screenScore += 1;
+  if (avgBlueRatio > 0.22) screenScore += 2;
+  else if (avgBlueRatio > 0.15) screenScore += 1;
+  if (avgSatVariance < 0.0015) screenScore += 1;
+  if (avgColorVariance < 120) screenScore += 1;
+  if (avgBrightnessUniformity < 150) screenScore += 1;
 
   console.log("[Liveness] Screen score:", screenScore);
 
-  if (screenScore >= 5) {
+  if (screenScore >= 4) {
     result.checks.screenDetection = false;
     onProgress?.("screenDetection", "failed");
     result.message = "Screen or printed photo detected. Please use your real face.";
@@ -452,12 +460,12 @@ export async function performLivenessCheck(
 
   // ── STEP 4: Eye openness check ──
   onProgress?.("eyeOpenness", "checking");
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 200));
   let eyesOpenCount = 0;
   for (const f of straightFrames) {
-    if (f.eyes.leftOpen > 0.18 && f.eyes.rightOpen > 0.18) eyesOpenCount++;
+    if (f.eyes.leftOpen > 0.14 && f.eyes.rightOpen > 0.14) eyesOpenCount++;
   }
-  result.checks.eyeOpenness = eyesOpenCount >= Math.floor(straightFrames.length * 0.5);
+  result.checks.eyeOpenness = eyesOpenCount >= Math.max(1, Math.floor(straightFrames.length * 0.4));
   onProgress?.("eyeOpenness", result.checks.eyeOpenness ? "passed" : "failed");
   if (!result.checks.eyeOpenness) {
     result.message = "Eyes not detected properly. Please keep your eyes open and look at the camera.";
@@ -466,32 +474,36 @@ export async function performLivenessCheck(
 
   // ── STEP 5: Blink detection (wait until detected) ──
   onProgress?.("blinkDetected", "checking");
-  onInstruction?.("😑 Now blink your eyes 2-3 times");
+  onInstruction?.("Now blink your eyes naturally");
 
   let blinkDetected = false;
   let blinkFrames: typeof allFrames = [];
-  let lastEar = 999;
   let blinkCount = 0;
   let eyeWasOpen = true;
+  let baselineEar = straightFrames.reduce((a, b) => a + (b.eyes.leftOpen + b.eyes.rightOpen) / 2, 0) / straightFrames.length;
+  console.log("[Liveness] Baseline EAR:", baselineEar.toFixed(4));
+
+  const blinkCloseThreshold = Math.min(baselineEar * 0.65, 0.16);
+  const blinkOpenThreshold = Math.max(baselineEar * 0.85, 0.19);
 
   blinkDetected = await waitForCondition(
     video,
     (data) => {
       const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
-      const isOpen = ear > 0.21;
-      const isClosed = ear < 0.17;
+      const isOpen = ear > blinkOpenThreshold;
+      const isClosed = ear < blinkCloseThreshold;
 
       if (eyeWasOpen && isClosed) {
         blinkCount++;
+        console.log("[Liveness] Blink #" + blinkCount + " detected, EAR:", ear.toFixed(4));
       }
       if (isOpen) eyeWasOpen = true;
       if (isClosed) eyeWasOpen = false;
 
       onFaceUpdate?.(data.position);
-      lastEar = ear;
       return blinkCount >= 1;
     },
-    8000, 200, blinkFrames
+    10000, 150, blinkFrames
   );
 
   if (blinkFrames.length > 0) {
@@ -503,14 +515,14 @@ export async function performLivenessCheck(
   onProgress?.("blinkDetected", blinkDetected ? "passed" : "failed");
   if (blinkDetected) {
     onInstruction?.("✅ Blink detected!");
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 400));
   }
 
-  // ── STEP 8: Motion check (from all collected frames) ──
+  // ── STEP 6: Motion check (from all collected frames) ──
   onProgress?.("motionDetected", "checking");
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 200));
   const positions = allFrames.map(f => f.position);
-  if (positions.length >= 3) {
+  if (positions.length >= 2) {
     let totalMotion = 0;
     for (let i = 1; i < positions.length; i++) {
       const dx = positions[i].x - positions[i - 1].x;
@@ -518,13 +530,14 @@ export async function performLivenessCheck(
       totalMotion += Math.sqrt(dx * dx + dy * dy);
     }
     const avgMotion = totalMotion / (positions.length - 1);
-    result.checks.motionDetected = avgMotion > 1.0;
+    console.log("[Liveness] Avg motion:", avgMotion.toFixed(2));
+    result.checks.motionDetected = avgMotion > 0.8;
   }
   onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
 
-  // ── STEP 9: Identity consistency ──
+  // ── STEP 7: Identity consistency ──
   onProgress?.("consistentDescriptor", "checking");
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 200));
   const descriptors = allFrames.map(f => f.descriptor);
   if (descriptors.length >= 3) {
     let consistentPairs = 0;
@@ -532,11 +545,15 @@ export async function performLivenessCheck(
     for (let i = 0; i < descriptors.length; i++) {
       for (let j = i + 1; j < descriptors.length; j++) {
         const dist = euclideanDistanceFloat(descriptors[i], descriptors[j]);
-        if (dist < 0.5) consistentPairs++;
+        if (dist < 0.55) consistentPairs++;
         totalPairs++;
       }
     }
-    result.checks.consistentDescriptor = totalPairs > 0 && (consistentPairs / totalPairs) > 0.6;
+    const ratio = totalPairs > 0 ? consistentPairs / totalPairs : 0;
+    console.log("[Liveness] Identity consistency:", ratio.toFixed(2), `(${consistentPairs}/${totalPairs})`);
+    result.checks.consistentDescriptor = totalPairs > 0 && ratio > 0.55;
+  } else {
+    result.checks.consistentDescriptor = descriptors.length > 0;
   }
   onProgress?.("consistentDescriptor", result.checks.consistentDescriptor ? "passed" : "failed");
 
@@ -551,16 +568,16 @@ export async function performLivenessCheck(
     result.checks.textureAnalysis,
     result.checks.screenDetection,
     result.checks.eyeOpenness,
+    result.checks.blinkDetected,
     result.checks.consistentDescriptor,
   ];
 
   const softChecks = [
-    result.checks.blinkDetected,
     result.checks.motionDetected,
   ];
 
   const criticalPassed = criticalChecks.every(c => c);
-  const softPassed = softChecks.filter(c => c).length >= 1;
+  const softPassed = true;
 
   result.isLive = criticalPassed && softPassed;
 
@@ -571,8 +588,7 @@ export async function performLivenessCheck(
     const failed = [];
     if (!result.checks.screenDetection) failed.push("screen/photo detected");
     if (!result.checks.textureAnalysis) failed.push("flat texture");
-
-    if (!result.checks.blinkDetected && !result.checks.motionDetected) failed.push("no blink or motion detected");
+    if (!result.checks.blinkDetected) failed.push("blink not detected");
     if (!result.checks.eyeOpenness) failed.push("eyes not properly detected");
     result.message = failed.length > 0
       ? `Liveness check failed: ${failed.join(". ")}. Please use your real face and follow instructions.`
