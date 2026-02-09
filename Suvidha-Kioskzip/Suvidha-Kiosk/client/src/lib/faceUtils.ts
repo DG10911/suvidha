@@ -277,12 +277,24 @@ async function captureFrameData(video: HTMLVideoElement, detection: any) {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const box = detection.detection.box;
   const faceBox = { x: box.x, y: box.y, width: box.width, height: box.height };
+
+  const landmarks = detection.landmarks as faceapi.FaceLandmarks68;
+  const positions = landmarks.positions;
+  const noseTip = positions[30];
+  const leftJaw = positions[0];
+  const rightJaw = positions[16];
+  const jawWidth = Math.abs(rightJaw.x - leftJaw.x);
+  const noseRelX = (noseTip.x - leftJaw.x) / (jawWidth + 0.001);
+
   return {
     canvas,
     descriptor: detection.descriptor as Float32Array,
-    eyes: analyzeEyeOpenness(detection.landmarks),
-    pose: getHeadPose(detection.landmarks),
+    eyes: analyzeEyeOpenness(landmarks),
+    pose: getHeadPose(landmarks),
     position: { x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width, height: box.height },
+    noseRelX,
+    noseTipX: noseTip.x,
+    jawWidth,
     faceSize: box.width * box.height,
     texture: analyzeTextureVariance(canvas, faceBox),
     color: analyzeColorDistribution(canvas, faceBox),
@@ -444,23 +456,27 @@ export async function performLivenessCheck(
   onProgress?.("headMovement", "checking");
   onInstruction?.("👉 Turn your head to the RIGHT");
 
-  const baselineNoseX = straightFrames.reduce((a, b) => a + b.position.x, 0) / straightFrames.length;
-  const baselineFaceW = straightFrames.reduce((a, b) => a + b.position.width, 0) / straightFrames.length;
-  const movementThreshold = baselineFaceW * 0.04;
+  const baselineNoseRelX = straightFrames.reduce((a, b) => a + b.noseRelX, 0) / straightFrames.length;
+  const baselineNoseTipX = straightFrames.reduce((a, b) => a + b.noseTipX, 0) / straightFrames.length;
+  const baselineJawW = straightFrames.reduce((a, b) => a + b.jawWidth, 0) / straightFrames.length;
+  const pixelThreshold = Math.max(5, baselineJawW * 0.03);
 
-  console.log("[Liveness] Baseline noseX:", baselineNoseX.toFixed(1), "faceW:", baselineFaceW.toFixed(1), "threshold:", movementThreshold.toFixed(1));
+  console.log("[Liveness] Baseline noseRelX:", baselineNoseRelX.toFixed(4), "noseTipX:", baselineNoseTipX.toFixed(1), "jawW:", baselineJawW.toFixed(1), "pixelThresh:", pixelThreshold.toFixed(1));
 
   let rightDetected = false;
   let rightFrames: typeof allFrames = [];
-  let rightNoseX = baselineNoseX;
+  let rightNoseTipX = baselineNoseTipX;
+  let rightDirection = 0;
 
   rightDetected = await waitForCondition(
     video,
     (data) => {
-      const noseShift = data.position.x - baselineNoseX;
-      console.log("[Liveness] RIGHT - noseX:", data.position.x.toFixed(1), "shift:", noseShift.toFixed(1), "need:", movementThreshold.toFixed(1));
-      if (Math.abs(noseShift) > movementThreshold) {
-        rightNoseX = data.position.x;
+      const pixelShift = data.noseTipX - baselineNoseTipX;
+      const relShift = data.noseRelX - baselineNoseRelX;
+      console.log("[Liveness] RIGHT - noseTipX:", data.noseTipX.toFixed(1), "pixelShift:", pixelShift.toFixed(1), "relShift:", relShift.toFixed(4));
+      if (Math.abs(pixelShift) > pixelThreshold || Math.abs(relShift) > 0.02) {
+        rightNoseTipX = data.noseTipX;
+        rightDirection = pixelShift > 0 ? 1 : -1;
         return true;
       }
       return false;
@@ -475,7 +491,7 @@ export async function performLivenessCheck(
     await new Promise(r => setTimeout(r, 1000));
   }
 
-  // ── STEP 6: Turn head LEFT (wait until detected) ──
+  // ── STEP 6: Turn head LEFT (wait until detected, must be OPPOSITE direction) ──
   onInstruction?.("👈 Now turn your head to the LEFT");
 
   let leftDetected = false;
@@ -484,13 +500,16 @@ export async function performLivenessCheck(
   leftDetected = await waitForCondition(
     video,
     (data) => {
-      const shiftFromRight = data.position.x - rightNoseX;
-      const shiftFromBaseline = data.position.x - baselineNoseX;
-      console.log("[Liveness] LEFT - noseX:", data.position.x.toFixed(1), "fromRight:", shiftFromRight.toFixed(1), "fromBaseline:", shiftFromBaseline.toFixed(1));
-      const movedFromRight = Math.abs(shiftFromRight) > movementThreshold;
-      const differentDirection = (rightNoseX > baselineNoseX && data.position.x < rightNoseX) ||
-                                  (rightNoseX < baselineNoseX && data.position.x > rightNoseX);
-      return movedFromRight && (differentDirection || Math.abs(shiftFromBaseline) > movementThreshold);
+      const pixelShiftFromRight = data.noseTipX - rightNoseTipX;
+      const pixelShiftFromBaseline = data.noseTipX - baselineNoseTipX;
+      const relShiftFromBaseline = data.noseRelX - baselineNoseRelX;
+      console.log("[Liveness] LEFT - noseTipX:", data.noseTipX.toFixed(1), "fromRight:", pixelShiftFromRight.toFixed(1), "fromBase:", pixelShiftFromBaseline.toFixed(1));
+
+      const movedFromRight = Math.abs(pixelShiftFromRight) > pixelThreshold || Math.abs(data.noseRelX - (rightFrames.length > 0 ? rightFrames[rightFrames.length - 1].noseRelX : baselineNoseRelX)) > 0.02;
+      const oppositeDirection = (rightDirection > 0 && pixelShiftFromRight < 0) || (rightDirection < 0 && pixelShiftFromRight > 0);
+      const anySignificantMove = Math.abs(pixelShiftFromBaseline) > pixelThreshold || Math.abs(relShiftFromBaseline) > 0.02;
+
+      return movedFromRight && (oppositeDirection || anySignificantMove);
     },
     10000, 200, leftFrames
   );

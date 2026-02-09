@@ -179,6 +179,11 @@
   }
 }
 
+@keyframes scanVertical {
+  0%, 100% { top: 0%; }
+  50% { top: 95%; }
+}
+
 @media print {
   body * {
     visibility: hidden !important;

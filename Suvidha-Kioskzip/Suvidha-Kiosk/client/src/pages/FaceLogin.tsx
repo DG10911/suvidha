@@ -291,93 +291,108 @@ export default function FaceLogin() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full space-y-5"
+              className="w-full space-y-4"
             >
               <div className="text-center">
                 <h3 className="text-3xl font-bold font-heading mb-1">Verifying Real Face</h3>
-                <p className="text-lg text-muted-foreground">Running 8-layer security verification...</p>
               </div>
 
-              <div className="flex gap-5 items-start">
-                <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                  <div className="relative w-52 h-52 rounded-2xl overflow-hidden bg-black border-4 border-blue-300">
-                    <video
-                      ref={assignVideoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 border-4 border-blue-400/50 rounded-2xl pointer-events-none">
-                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
-                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
-                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
-                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
-                    </div>
-                    <div className="absolute bottom-0 inset-x-0 h-0.5 bg-green-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative w-72 h-72 rounded-3xl overflow-hidden bg-black border-4 border-blue-400 shadow-lg shadow-blue-500/20">
+                  <video
+                    ref={assignVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute top-0 left-0 w-10 h-10 border-t-[3px] border-l-[3px] border-cyan-400 rounded-tl-xl"></div>
+                    <div className="absolute top-0 right-0 w-10 h-10 border-t-[3px] border-r-[3px] border-cyan-400 rounded-tr-xl"></div>
+                    <div className="absolute bottom-0 left-0 w-10 h-10 border-b-[3px] border-l-[3px] border-cyan-400 rounded-bl-xl"></div>
+                    <div className="absolute bottom-0 right-0 w-10 h-10 border-b-[3px] border-r-[3px] border-cyan-400 rounded-br-xl"></div>
                   </div>
 
-                  {instruction && (
-                    <motion.div
-                      key={instruction}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold text-center max-w-[220px]"
-                    >
-                      {instruction}
-                    </motion.div>
-                  )}
+                  <div className="absolute inset-0 pointer-events-none opacity-20">
+                    <div className="absolute top-1/4 left-4 right-4 h-px bg-cyan-400"></div>
+                    <div className="absolute top-1/2 left-4 right-4 h-px bg-cyan-400"></div>
+                    <div className="absolute top-3/4 left-4 right-4 h-px bg-cyan-400"></div>
+                    <div className="absolute left-1/4 top-4 bottom-4 w-px bg-cyan-400"></div>
+                    <div className="absolute left-1/2 top-4 bottom-4 w-px bg-cyan-400"></div>
+                    <div className="absolute left-3/4 top-4 bottom-4 w-px bg-cyan-400"></div>
+                  </div>
 
-                  {capturedFrames.length > 0 && (
-                    <div className="flex gap-1.5">
-                      {capturedFrames.slice(-4).map((frame, idx) => (
-                        <div key={idx} className="w-11 h-11 rounded-lg overflow-hidden border-2 border-green-300">
-                          <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-[scanVertical_2s_ease-in-out_infinite] pointer-events-none"></div>
+
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-40 h-52 border-2 border-cyan-400/40 rounded-[40%] animate-pulse"></div>
+                  </div>
+
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600/90 text-white px-2 py-1 rounded-lg text-xs font-bold">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    SCANNING
+                  </div>
                 </div>
 
-                <div className="flex-1 space-y-2">
-                  {livenessSteps.map((s) => (
-                    <div
-                      key={s.key}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 ${
-                        s.status === "passed" ? "border-green-300 bg-green-50" :
-                        s.status === "failed" ? "border-red-300 bg-red-50" :
-                        s.status === "checking" ? "border-blue-300 bg-blue-50 animate-pulse" :
-                        "border-gray-200 bg-gray-50"
-                      }`}
-                    >
-                      <div className={`flex-shrink-0 ${
-                        s.status === "passed" ? "text-green-600" :
-                        s.status === "failed" ? "text-red-500" :
-                        s.status === "checking" ? "text-blue-600" :
-                        "text-gray-400"
-                      }`}>
-                        {s.status === "checking" ? <Loader2 className="w-5 h-5 animate-spin" /> :
-                         s.status === "passed" ? <CheckCircle2 className="w-5 h-5" /> :
-                         s.status === "failed" ? <XCircle className="w-5 h-5" /> :
-                         stepIcons[s.key] || <Shield className="w-5 h-5" />}
+                {instruction && (
+                  <motion.div
+                    key={instruction}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`px-6 py-3 rounded-2xl text-lg font-bold text-center max-w-[320px] ${
+                      instruction.includes("✅") 
+                        ? "bg-green-100 text-green-700 border-2 border-green-300" 
+                        : "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
+                    }`}
+                  >
+                    {instruction}
+                  </motion.div>
+                )}
+
+                {capturedFrames.length > 0 && (
+                  <div className="flex gap-2">
+                    {capturedFrames.slice(-4).map((frame, idx) => (
+                      <div key={idx} className="w-12 h-12 rounded-lg overflow-hidden border-2 border-cyan-300 shadow-sm">
+                        <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
                       </div>
-                      <span className={`text-sm font-semibold ${
-                        s.status === "passed" ? "text-green-700" :
-                        s.status === "failed" ? "text-red-600" :
-                        s.status === "checking" ? "text-blue-700" :
-                        "text-gray-500"
-                      }`}>
-                        {s.label}
-                      </span>
-                      {s.status === "passed" && (
-                        <span className="ml-auto text-xs text-green-600 font-bold">PASS</span>
-                      )}
-                      {s.status === "failed" && (
-                        <span className="ml-auto text-xs text-red-500 font-bold">FAIL</span>
-                      )}
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {livenessSteps.map((s) => (
+                  <div
+                    key={s.key}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all duration-300 ${
+                      s.status === "passed" ? "border-green-300 bg-green-50" :
+                      s.status === "failed" ? "border-red-300 bg-red-50" :
+                      s.status === "checking" ? "border-blue-300 bg-blue-50 animate-pulse" :
+                      "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <div className={`${
+                      s.status === "passed" ? "text-green-600" :
+                      s.status === "failed" ? "text-red-500" :
+                      s.status === "checking" ? "text-blue-600" :
+                      "text-gray-400"
+                    }`}>
+                      {s.status === "checking" ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                       s.status === "passed" ? <CheckCircle2 className="w-4 h-4" /> :
+                       s.status === "failed" ? <XCircle className="w-4 h-4" /> :
+                       stepIcons[s.key] || <Shield className="w-4 h-4" />}
                     </div>
-                  ))}
-                </div>
+                    <span className={`text-[10px] font-semibold text-center leading-tight ${
+                      s.status === "passed" ? "text-green-700" :
+                      s.status === "failed" ? "text-red-600" :
+                      s.status === "checking" ? "text-blue-700" :
+                      "text-gray-500"
+                    }`}>
+                      {s.label.split(" ").slice(0, 2).join(" ")}
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
