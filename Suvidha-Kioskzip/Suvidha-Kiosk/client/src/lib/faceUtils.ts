@@ -68,11 +68,23 @@ function getHeadPose(landmarks: faceapi.FaceLandmarks68): { yaw: number; pitch: 
   const chin = positions[8];
   const foreheadApprox = positions[27];
 
+  const leftJaw = positions[0];
+  const rightJaw = positions[16];
+
+  const faceCenter = { x: (leftJaw.x + rightJaw.x) / 2, y: (leftJaw.y + rightJaw.y) / 2 };
+  const faceWidth = Math.abs(rightJaw.x - leftJaw.x);
+
+  const noseDeviationFromFace = (noseTip.x - faceCenter.x) / (faceWidth + 0.001);
+
   const eyeCenter = { x: (leftEye.x + rightEye.x) / 2, y: (leftEye.y + rightEye.y) / 2 };
   const eyeWidth = Math.abs(rightEye.x - leftEye.x);
+  const noseDeviationFromEyes = (noseTip.x - eyeCenter.x) / (eyeWidth + 0.001);
 
-  const noseDeviation = (noseTip.x - eyeCenter.x) / (eyeWidth + 0.001);
-  const yaw = noseDeviation;
+  const leftDist = Math.abs(noseTip.x - leftJaw.x);
+  const rightDist = Math.abs(noseTip.x - rightJaw.x);
+  const asymmetry = (rightDist - leftDist) / (faceWidth + 0.001);
+
+  const yaw = (noseDeviationFromFace + noseDeviationFromEyes + asymmetry) / 3;
 
   const faceHeight = Math.abs(chin.y - foreheadApprox.y);
   const noseVerticalPos = (noseTip.y - foreheadApprox.y) / (faceHeight + 0.001);
@@ -432,23 +444,31 @@ export async function performLivenessCheck(
   onProgress?.("headMovement", "checking");
   onInstruction?.("👉 Slowly turn your head to the RIGHT");
 
+  console.log("[Liveness] Baseline yaw:", baselineYaw.toFixed(4));
+
   let rightDetected = false;
   let rightFrames: typeof allFrames = [];
+  let rightYawValue = baselineYaw;
 
   rightDetected = await waitForCondition(
     video,
     (data) => {
       const yawDelta = data.pose.yaw - baselineYaw;
-      return Math.abs(yawDelta) > 0.025;
+      console.log("[Liveness] RIGHT check - yaw:", data.pose.yaw.toFixed(4), "delta:", yawDelta.toFixed(4));
+      if (Math.abs(yawDelta) > 0.015) {
+        rightYawValue = data.pose.yaw;
+        return true;
+      }
+      return false;
     },
-    8000, 300, rightFrames
+    10000, 250, rightFrames
   );
 
   if (rightDetected && rightFrames.length > 0) {
     allFrames.push(...rightFrames);
     captureThumb(rightFrames[rightFrames.length - 1].canvas);
     onInstruction?.("✅ Right turn detected!");
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 800));
   }
 
   // ── STEP 6: Turn head LEFT (wait until detected) ──
@@ -456,34 +476,33 @@ export async function performLivenessCheck(
 
   let leftDetected = false;
   let leftFrames: typeof allFrames = [];
-  const rightYaw = rightFrames.length > 0
-    ? rightFrames[rightFrames.length - 1].pose.yaw
-    : baselineYaw;
 
   leftDetected = await waitForCondition(
     video,
     (data) => {
       const yawDelta = data.pose.yaw - baselineYaw;
-      const oppositeFromRight = (rightYaw - baselineYaw > 0 && yawDelta < -0.02) ||
-                                 (rightYaw - baselineYaw < 0 && yawDelta > 0.02) ||
-                                 Math.abs(yawDelta) > 0.025;
-      return oppositeFromRight;
+      const deltaFromRight = data.pose.yaw - rightYawValue;
+      console.log("[Liveness] LEFT check - yaw:", data.pose.yaw.toFixed(4), "delta from baseline:", yawDelta.toFixed(4), "delta from right:", deltaFromRight.toFixed(4));
+      const movedFromBaseline = Math.abs(yawDelta) > 0.012;
+      const movedFromRight = Math.abs(deltaFromRight) > 0.015;
+      return movedFromBaseline && movedFromRight;
     },
-    8000, 300, leftFrames
+    10000, 250, leftFrames
   );
 
   if (leftDetected && leftFrames.length > 0) {
     allFrames.push(...leftFrames);
     captureThumb(leftFrames[leftFrames.length - 1].canvas);
     onInstruction?.("✅ Left turn detected!");
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 800));
   }
 
   result.checks.headMovement = rightDetected && leftDetected;
   onProgress?.("headMovement", result.checks.headMovement ? "passed" : "failed");
 
   if (!result.checks.headMovement) {
-    result.message = "Head movement not detected. Please turn your head right and then left when prompted.";
+    const detail = !rightDetected ? "Right turn was not detected." : "Left turn was not detected.";
+    result.message = `Head movement not detected. ${detail} Please turn your head more noticeably when prompted.`;
     return result;
   }
 
