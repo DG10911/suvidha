@@ -21,7 +21,7 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - **Frontend**: React + Vite (TypeScript), served on port 5000
 - **Backend**: Express.js (TypeScript), same port 5000
 - **Database**: PostgreSQL (Neon-backed via Replit)
-- **Face Detection**: face-api.js (client-side)
+- **Face Detection**: face-api.js (client-side) + MediaPipe FaceLandmarker (blink/motion)
 - **TTS**: OpenAI API (server-side)
 - **SMS/OTP**: Twilio (via Replit connector)
 - **ORM**: Drizzle
@@ -51,10 +51,10 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
 - Steps: face detect (5 frames) → texture → screen check → eyes → blink (critical, wait) → motion → identity
 - Face detection: retry with 3 configs (512/416/320) for robust detection across lighting/distances
-- Blink detection: eye height delta (not EAR ratio) with hysteresis (close=0.60*baseline, open=0.80*baseline), time-validated (120-450ms), 80ms polling
-- Blink uses state machine (OPEN→CLOSED→OPEN) with duration check, tolerates face-loss ≤200ms during CLOSED state
+- Blink detection: MediaPipe FaceLandmarker blendshapes (eyeBlinkLeft/eyeBlinkRight scores 0-1), close>0.4, open<0.2, time-validated (80-500ms), 60ms polling
+- Blink uses state machine (OPEN→CLOSED→OPEN) with duration check, falls back to face-api.js eye height if MediaPipe unavailable
 - Blink is now a critical check (required to pass), motion is soft (informational)
-- Motion detection: frame-to-frame nose drift normalized by jaw width (threshold 0.012), not anchor-based
+- Motion detection: MediaPipe nose landmark drift (threshold 0.012), falls back to face-api.js frame-to-frame nose drift
 - Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 4+ indicators)
 - Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
 - Identity consistency: 0.55 distance threshold, 55% pair consistency, requires ≥3 frames

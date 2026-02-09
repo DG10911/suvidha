@@ -8,20 +8,26 @@ let mediapipeReady = false;
 
 async function initMediaPipe(): Promise<void> {
   if (mediapipeReady && mediapipeLandmarker) return;
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-  );
-  mediapipeLandmarker = await FaceLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-      delegate: "GPU",
-    },
-    outputFaceBlendshapes: true,
-    runningMode: "VIDEO",
-    numFaces: 1,
-  });
-  mediapipeReady = true;
-  console.log("[MediaPipe] FaceLandmarker initialized");
+  try {
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    );
+    mediapipeLandmarker = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU",
+      },
+      outputFaceBlendshapes: true,
+      runningMode: "VIDEO",
+      numFaces: 1,
+    });
+    mediapipeReady = true;
+    console.log("[MediaPipe] FaceLandmarker initialized");
+  } catch (err) {
+    console.warn("[MediaPipe] Failed to initialize, will fall back to face-api.js:", err);
+    mediapipeLandmarker = null;
+    mediapipeReady = false;
+  }
 }
 
 export async function loadFaceModels(): Promise<void> {
@@ -495,80 +501,124 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Blink detection (eye height delta with hysteresis + face-loss tolerance) ──
+  // ── STEP 5: Blink detection (MediaPipe FaceMesh blendshapes) ──
   onProgress?.("blinkDetected", "checking");
   onInstruction?.("Now blink your eyes naturally");
 
   let blinkDetected = false;
-  let blinkFrames: typeof allFrames = [];
-  const baselineHeight = straightFrames.reduce((a, b) => a + (b.eyes.leftHeight + b.eyes.rightHeight) / 2, 0) / straightFrames.length;
-  console.log("[Liveness] Baseline eye height:", baselineHeight.toFixed(2), "px");
+  let motionFound = false;
 
-  const HEIGHT_CLOSE = baselineHeight * 0.60;
-  const HEIGHT_OPEN = baselineHeight * 0.80;
-  const BLINK_MIN_MS = 120;
-  const BLINK_MAX_MS = 450;
+  const BLINK_CLOSE_THRESHOLD = 0.4;
+  const BLINK_OPEN_THRESHOLD = 0.2;
+  const BLINK_MIN_MS = 80;
+  const BLINK_MAX_MS = 500;
+  const MOTION_THRESHOLD = 0.012;
 
-  console.log("[Liveness] Blink thresholds - close:", HEIGHT_CLOSE.toFixed(2), "open:", HEIGHT_OPEN.toFixed(2));
-
-  {
+  if (mediapipeLandmarker) {
     let eyeState: "OPEN" | "CLOSED" = "OPEN";
     let blinkStartTime = 0;
-    let lastSeenTime = performance.now();
     let blinkCount = 0;
     const blinkStart = Date.now();
     const blinkTimeout = 10000;
-    const blinkPoll = 80;
+    const blinkPoll = 60;
+
+    type NosePos = { x: number; y: number };
+    let lastNose: NosePos | null = null;
+    let lastVideoTime = -1;
+
+    console.log("[MediaPipe] Starting blink detection with blendshapes");
 
     while (Date.now() - blinkStart < blinkTimeout) {
-      const det = await detectOnce(video);
-      let data: Awaited<ReturnType<typeof captureFrameData>> = null;
-      if (det) {
-        data = await captureFrameData(video, det);
-      }
-
       const now = performance.now();
+      const currentTime = video.currentTime;
 
-      if (!data) {
-        if (eyeState === "CLOSED" && now - lastSeenTime < 200) {
-          // allow short face loss during blink
-        } else {
-          eyeState = "OPEN";
-        }
-      } else {
-        lastSeenTime = now;
-        blinkFrames.push(data);
-        const eyeH = (data.eyes.leftHeight + data.eyes.rightHeight) / 2;
-
-        console.log("[Liveness] eyeH:", eyeH.toFixed(2), "state:", eyeState, "faceDetected: true");
-
-        if (eyeH < HEIGHT_CLOSE && eyeState === "OPEN") {
-          eyeState = "CLOSED";
-          blinkStartTime = now;
-          console.log("[Liveness] Eyes closed, eyeH:", eyeH.toFixed(2));
+      if (currentTime !== lastVideoTime) {
+        lastVideoTime = currentTime;
+        let mpResult;
+        try {
+          mpResult = mediapipeLandmarker.detectForVideo(video, now);
+        } catch (e) {
+          console.warn("[MediaPipe] detectForVideo error:", e);
+          await new Promise(r => setTimeout(r, blinkPoll));
+          continue;
         }
 
-        if (eyeH > HEIGHT_OPEN && eyeState === "CLOSED") {
-          const duration = now - blinkStartTime;
-          console.log("[Liveness] Eyes reopened, duration:", duration.toFixed(0), "ms, eyeH:", eyeH.toFixed(2));
+        if (mpResult?.faceBlendshapes && mpResult.faceBlendshapes.length > 0) {
+          const blendshapes = mpResult.faceBlendshapes[0].categories;
+          const blinkL = blendshapes.find(c => c.categoryName === "eyeBlinkLeft")?.score ?? 0;
+          const blinkR = blendshapes.find(c => c.categoryName === "eyeBlinkRight")?.score ?? 0;
+          const blinkScore = (blinkL + blinkR) / 2;
 
-          if (duration >= BLINK_MIN_MS && duration <= BLINK_MAX_MS) {
-            blinkCount++;
-            console.log("[Liveness] Valid blink #" + blinkCount + " (duration: " + duration.toFixed(0) + "ms)");
+          console.log("[MediaPipe] blinkL:", blinkL.toFixed(3), "blinkR:", blinkR.toFixed(3), "avg:", blinkScore.toFixed(3), "state:", eyeState);
+
+          if (blinkScore > BLINK_CLOSE_THRESHOLD && eyeState === "OPEN") {
+            eyeState = "CLOSED";
+            blinkStartTime = now;
+            console.log("[MediaPipe] Eyes CLOSED, score:", blinkScore.toFixed(3));
           }
-          eyeState = "OPEN";
-        }
 
-        onFaceUpdate?.(data.position);
-        if (blinkCount >= 1) { blinkDetected = true; break; }
+          if (blinkScore < BLINK_OPEN_THRESHOLD && eyeState === "CLOSED") {
+            const duration = now - blinkStartTime;
+            console.log("[MediaPipe] Eyes OPENED, duration:", duration.toFixed(0), "ms");
+
+            if (duration >= BLINK_MIN_MS && duration <= BLINK_MAX_MS) {
+              blinkCount++;
+              console.log("[MediaPipe] Valid blink #" + blinkCount + " (duration: " + duration.toFixed(0) + "ms)");
+            }
+            eyeState = "OPEN";
+          }
+
+          if (mpResult.faceLandmarks && mpResult.faceLandmarks.length > 0) {
+            const landmarks = mpResult.faceLandmarks[0];
+            const nose = landmarks[1];
+            if (lastNose && !motionFound) {
+              const dx = Math.abs(nose.x - lastNose.x);
+              const dy = Math.abs(nose.y - lastNose.y);
+              const drift = dx + dy;
+              if (drift > MOTION_THRESHOLD) {
+                console.log("[MediaPipe] Motion detected, drift:", drift.toFixed(4));
+                motionFound = true;
+              }
+            }
+            lastNose = { x: nose.x, y: nose.y };
+          }
+
+          if (blinkCount >= 1) { blinkDetected = true; break; }
+        }
       }
+
       await new Promise(r => setTimeout(r, blinkPoll));
     }
-  }
+  } else {
+    console.warn("[MediaPipe] FaceLandmarker not available, falling back to face-api.js eye height");
+    const baselineHeight = straightFrames.reduce((a, b) => a + (b.eyes.leftHeight + b.eyes.rightHeight) / 2, 0) / straightFrames.length;
+    const HEIGHT_CLOSE = baselineHeight * 0.60;
+    const HEIGHT_OPEN = baselineHeight * 0.80;
 
-  if (blinkFrames.length > 0) {
-    allFrames.push(...blinkFrames);
-    captureThumb(blinkFrames[blinkFrames.length - 1].canvas);
+    let eyeState: "OPEN" | "CLOSED" = "OPEN";
+    let blinkStartTime = 0;
+    let blinkCount = 0;
+    const blinkStart = Date.now();
+
+    while (Date.now() - blinkStart < 10000) {
+      const det = await detectOnce(video);
+      if (det) {
+        const data = await captureFrameData(video, det);
+        if (data) {
+          const eyeH = (data.eyes.leftHeight + data.eyes.rightHeight) / 2;
+          const now = performance.now();
+          if (eyeH < HEIGHT_CLOSE && eyeState === "OPEN") { eyeState = "CLOSED"; blinkStartTime = now; }
+          if (eyeH > HEIGHT_OPEN && eyeState === "CLOSED") {
+            const dur = now - blinkStartTime;
+            if (dur >= 80 && dur <= 500) blinkCount++;
+            eyeState = "OPEN";
+          }
+          onFaceUpdate?.(data.position);
+          if (blinkCount >= 1) { blinkDetected = true; break; }
+        }
+      }
+      await new Promise(r => setTimeout(r, 80));
+    }
   }
 
   result.checks.blinkDetected = blinkDetected;
@@ -578,28 +628,25 @@ export async function performLivenessCheck(
     await new Promise(r => setTimeout(r, 400));
   }
 
-  // ── STEP 6: Motion check (frame-to-frame nose drift, normalized by jaw width) ──
+  // ── STEP 6: Motion check (MediaPipe nose drift or face-api fallback) ──
   onProgress?.("motionDetected", "checking");
   await new Promise(r => setTimeout(r, 200));
-  const MOTION_THRESHOLD = 0.012;
-  let motionFound = false;
-  if (allFrames.length >= 2) {
+  if (!motionFound && allFrames.length >= 2) {
     for (let i = 1; i < allFrames.length; i++) {
       const prev = allFrames[i - 1];
       const curr = allFrames[i];
       const jaw = curr.jawWidth + 0.001;
       const dx = Math.abs(curr.noseTipX - prev.noseTipX) / jaw;
       const dy = Math.abs(curr.noseTipY - prev.noseTipY) / jaw;
-      const frameDrift = dx + dy;
-      if (frameDrift > MOTION_THRESHOLD) {
-        console.log("[Liveness] Motion detected at frame", i, "drift:", frameDrift.toFixed(4));
+      if (dx + dy > MOTION_THRESHOLD) {
+        console.log("[Liveness] Motion detected (fallback) at frame", i);
         motionFound = true;
         break;
       }
     }
   }
   result.checks.motionDetected = motionFound;
-  if (!motionFound) console.log("[Liveness] No significant frame-to-frame motion detected");
+  if (!motionFound) console.log("[Liveness] No significant motion detected");
   onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
 
   // ── STEP 7: Identity consistency ──
