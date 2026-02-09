@@ -313,6 +313,7 @@ async function captureFrameData(video: HTMLVideoElement, detection: any) {
     position: { x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width, height: box.height },
     noseRelX,
     noseTipX: noseTip.x,
+    noseTipY: noseTip.y,
     jawWidth,
     faceSize: box.width * box.height,
     texture: analyzeTextureVariance(canvas, faceBox),
@@ -472,25 +473,30 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Blink detection (wait until detected) ──
+  // ── STEP 5: Blink detection (temporal EAR with hysteresis) ──
   onProgress?.("blinkDetected", "checking");
   onInstruction?.("Now blink your eyes naturally");
 
   let blinkDetected = false;
   let blinkFrames: typeof allFrames = [];
   let blinkCount = 0;
-  let eyeWasOpen = true;
-  let faceLostWhileOpen = false;
   let baselineEar = straightFrames.reduce((a, b) => a + (b.eyes.leftOpen + b.eyes.rightOpen) / 2, 0) / straightFrames.length;
   console.log("[Liveness] Baseline EAR:", baselineEar.toFixed(4));
 
-  const blinkCloseThreshold = Math.min(baselineEar * 0.75, 0.19);
-  const blinkOpenThreshold = Math.max(baselineEar * 0.80, 0.18);
+  const EAR_CLOSE_THRESHOLD = Math.min(baselineEar * 0.78, 0.22);
+  const EAR_OPEN_THRESHOLD = Math.max(baselineEar * 0.88, 0.27);
+  const BLINK_MIN_MS = 50;
+  const BLINK_MAX_MS = 800;
+
+  console.log("[Liveness] Blink thresholds - close:", EAR_CLOSE_THRESHOLD.toFixed(4), "open:", EAR_OPEN_THRESHOLD.toFixed(4));
 
   {
+    let eyeState: "OPEN" | "CLOSED" = "OPEN";
+    let blinkStartTime = 0;
     const blinkStart = Date.now();
     const blinkTimeout = 10000;
-    const blinkPoll = 100;
+    const blinkPoll = 80;
+
     while (Date.now() - blinkStart < blinkTimeout) {
       const det = await detectOnce(video);
       if (det) {
@@ -498,30 +504,28 @@ export async function performLivenessCheck(
         if (data) {
           blinkFrames.push(data);
           const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
-          const isOpen = ear > blinkOpenThreshold;
-          const isClosed = ear < blinkCloseThreshold;
 
-          if (faceLostWhileOpen && isOpen) {
-            blinkCount++;
-            console.log("[Liveness] Blink detected (face-lost recovery), EAR:", ear.toFixed(4));
-            faceLostWhileOpen = false;
+          console.log("[Liveness] EAR:", ear.toFixed(4), "state:", eyeState);
+
+          if (ear < EAR_CLOSE_THRESHOLD && eyeState === "OPEN") {
+            eyeState = "CLOSED";
+            blinkStartTime = performance.now();
+            console.log("[Liveness] Eyes closed, EAR:", ear.toFixed(4));
           }
 
-          if (eyeWasOpen && isClosed) {
-            blinkCount++;
-            console.log("[Liveness] Blink #" + blinkCount + " detected, EAR:", ear.toFixed(4));
+          if (ear > EAR_OPEN_THRESHOLD && eyeState === "CLOSED") {
+            const blinkDuration = performance.now() - blinkStartTime;
+            console.log("[Liveness] Eyes reopened, duration:", blinkDuration.toFixed(0), "ms, EAR:", ear.toFixed(4));
+
+            if (blinkDuration >= BLINK_MIN_MS && blinkDuration <= BLINK_MAX_MS) {
+              blinkCount++;
+              console.log("[Liveness] Valid blink #" + blinkCount + " (duration: " + blinkDuration.toFixed(0) + "ms)");
+            }
+            eyeState = "OPEN";
           }
-          if (isOpen) { eyeWasOpen = true; faceLostWhileOpen = false; }
-          if (isClosed) eyeWasOpen = false;
 
           onFaceUpdate?.(data.position);
           if (blinkCount >= 1) { blinkDetected = true; break; }
-        }
-      } else {
-        if (eyeWasOpen) {
-          faceLostWhileOpen = true;
-          eyeWasOpen = false;
-          console.log("[Liveness] Face lost during blink check (possible eye closure)");
         }
       }
       await new Promise(r => setTimeout(r, blinkPoll));
@@ -540,20 +544,22 @@ export async function performLivenessCheck(
     await new Promise(r => setTimeout(r, 400));
   }
 
-  // ── STEP 6: Motion check (from all collected frames) ──
+  // ── STEP 6: Motion check (nose position drift) ──
   onProgress?.("motionDetected", "checking");
   await new Promise(r => setTimeout(r, 200));
-  const positions = allFrames.map(f => f.position);
-  if (positions.length >= 2) {
-    let totalMotion = 0;
-    for (let i = 1; i < positions.length; i++) {
-      const dx = positions[i].x - positions[i - 1].x;
-      const dy = positions[i].y - positions[i - 1].y;
-      totalMotion += Math.sqrt(dx * dx + dy * dy);
+  if (allFrames.length >= 2) {
+    let maxNoseDrift = 0;
+    const firstNoseX = allFrames[0].noseTipX;
+    const firstNoseY = allFrames[0].noseTipY;
+    const firstJawW = allFrames[0].jawWidth;
+    for (let i = 1; i < allFrames.length; i++) {
+      const normDx = Math.abs(allFrames[i].noseTipX - firstNoseX) / (firstJawW + 0.001);
+      const normDy = Math.abs(allFrames[i].noseTipY - firstNoseY) / (firstJawW + 0.001);
+      const drift = normDx + normDy;
+      if (drift > maxNoseDrift) maxNoseDrift = drift;
     }
-    const avgMotion = totalMotion / (positions.length - 1);
-    console.log("[Liveness] Avg motion:", avgMotion.toFixed(2));
-    result.checks.motionDetected = avgMotion > 0.3;
+    console.log("[Liveness] Max nose drift (normalized):", maxNoseDrift.toFixed(4));
+    result.checks.motionDetected = maxNoseDrift > 0.015;
   }
   onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
 
