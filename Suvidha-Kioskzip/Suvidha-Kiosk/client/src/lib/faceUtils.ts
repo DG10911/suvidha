@@ -648,6 +648,11 @@ export async function performLivenessCheck(
           }
           lastNose = { x: nose.x, y: nose.y };
 
+          if (motionFound && !blinkDetected) {
+            console.log("[Liveness] Motion detected during blink phase — auto passing blink");
+            blinkDetected = true;
+            break;
+          }
           if (blinkCount >= 1) { blinkDetected = true; break; }
         } else {
           if (eyeState === "CLOSED") {
