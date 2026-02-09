@@ -1,0 +1,289 @@
+import KioskLayout from "@/components/layout/KioskLayout";
+import { FileText, Download, Eye, Printer, FolderOpen, Shield, X, CreditCard, FileCheck, Landmark, Wrench, Receipt, Filter } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useMemo } from "react";
+import { loadPreferences } from "@/lib/userPreferences";
+import { t, type TranslationKey } from "@/lib/translations";
+import { getDocuments, fetchDocumentsFromApi, type KioskDocument } from "@/lib/kioskStore";
+
+const typeConfig: Record<string, { icon: typeof FileText; color: string; label: string }> = {
+  receipt: { icon: Receipt, color: "text-blue-600 bg-blue-100", label: "Receipt" },
+  payment: { icon: CreditCard, color: "text-green-600 bg-green-100", label: "Payment" },
+  certificate: { icon: Shield, color: "text-purple-600 bg-purple-100", label: "Certificate" },
+  complaint: { icon: FileText, color: "text-orange-600 bg-orange-100", label: "Complaint" },
+  connection: { icon: Wrench, color: "text-teal-600 bg-teal-100", label: "Application" },
+};
+
+export default function Documents() {
+  const [lang, setLang] = useState(() => loadPreferences().language);
+  const [documents, setDocuments] = useState<KioskDocument[]>(() => getDocuments());
+  const [viewDoc, setViewDoc] = useState<KioskDocument | null>(null);
+  const [filterType, setFilterType] = useState<string>("all");
+  const [printingId, setPrintingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.language) setLang(detail.language);
+    };
+    window.addEventListener("prefs-changed", handler);
+    return () => window.removeEventListener("prefs-changed", handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setDocuments(getDocuments());
+    window.addEventListener("kiosk-store-changed", handler);
+    return () => window.removeEventListener("kiosk-store-changed", handler);
+  }, []);
+
+  useEffect(() => {
+    fetchDocumentsFromApi().then((data) => setDocuments(data));
+  }, []);
+
+  const filteredDocs = useMemo(() => {
+    if (filterType === "all") return documents;
+    return documents.filter((d) => d.type === filterType);
+  }, [documents, filterType]);
+
+  const typeOptions = useMemo(() => {
+    const types = new Set(documents.map((d) => d.type));
+    return Array.from(types);
+  }, [documents]);
+
+  const handlePrint = (doc: KioskDocument) => {
+    setPrintingId(doc.id);
+    const printContent = `
+      <html>
+        <head>
+          <title>${doc.title}</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; padding: 40px; color: #1a1a1a; }
+            .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 16px; margin-bottom: 24px; }
+            .header h1 { font-size: 20px; color: #2563eb; margin: 0; }
+            .header p { color: #666; font-size: 12px; margin-top: 4px; }
+            .logo { font-size: 28px; font-weight: bold; color: #2563eb; margin-bottom: 8px; }
+            .content { white-space: pre-wrap; font-size: 14px; line-height: 1.8; background: #f8f9fa; padding: 20px; border-radius: 8px; }
+            .meta { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e0e0e0; }
+            .footer { text-align: center; margin-top: 40px; font-size: 11px; color: #999; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="logo">Suvidha Kiosk</div>
+            <h1>${doc.title}</h1>
+            <p>Service: ${doc.service} | Date: ${new Date(doc.date).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}</p>
+          </div>
+          <div class="content">${doc.content}</div>
+          <div class="meta">
+            <span>Document ID: ${doc.id}</span>
+            ${doc.referenceId ? `<span>Reference: ${doc.referenceId}</span>` : ""}
+            ${doc.amount ? `<span>Amount: ${doc.amount}</span>` : ""}
+          </div>
+          <div class="footer">
+            This is a digitally generated document from Suvidha Kiosk. For verification, contact: 1800-233-4455
+          </div>
+        </body>
+      </html>
+    `;
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => { printWindow.print(); setPrintingId(null); }, 500);
+    } else {
+      setPrintingId(null);
+    }
+  };
+
+  const handleDownload = (doc: KioskDocument) => {
+    const text = `${doc.title}\n${"=".repeat(40)}\n\nDocument ID: ${doc.id}\nDate: ${doc.date}\nService: ${doc.service}\n${doc.referenceId ? `Reference: ${doc.referenceId}\n` : ""}${doc.amount ? `Amount: ${doc.amount}\n` : ""}\n${"—".repeat(40)}\n\n${doc.content}\n\n${"—".repeat(40)}\nGenerated by Suvidha Kiosk\nHelpline: 1800-233-4455`;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${doc.id}-${doc.title.replace(/[^a-zA-Z0-9]/g, "_")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <KioskLayout>
+      <div className="space-y-5 max-w-4xl mx-auto w-full">
+        <div>
+          <h2 className="text-3xl font-bold font-heading">{t("documents_receipts", lang)}</h2>
+          <p className="text-lg text-muted-foreground mt-1">{t("documents_desc", lang)}</p>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-amber-800">
+          <Shield className="w-4 h-4 flex-shrink-0" />
+          Sensitive data is masked for security. Time-bound access applies. Documents are available for 90 days.
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setFilterType("all")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              filterType === "all" ? "bg-primary text-white shadow-md" : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+            }`}
+          >
+            All ({documents.length})
+          </button>
+          {typeOptions.map((type) => {
+            const cfg = typeConfig[type] || typeConfig.receipt;
+            const count = documents.filter((d) => d.type === type).length;
+            return (
+              <button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  filterType === type ? "bg-primary text-white shadow-md" : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+                }`}
+              >
+                {cfg.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+
+        {filteredDocs.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            <FolderOpen className="w-16 h-16 mx-auto mb-4 opacity-30" />
+            <p className="text-xl">{t("no_documents", lang)}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredDocs.map((doc, index) => {
+              const cfg = typeConfig[doc.type] || typeConfig.receipt;
+              const DocIcon = cfg.icon;
+              return (
+                <motion.div
+                  key={doc.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.04 }}
+                  className="bg-white rounded-2xl p-5 border border-border shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${cfg.color}`}>
+                      <DocIcon className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-base truncate">{doc.title}</h4>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <span>{cfg.label}</span>
+                        <span>{doc.service}</span>
+                        <span>{new Date(doc.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                        {doc.amount && <span className="font-medium text-foreground">{doc.amount}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full gap-1.5"
+                        onClick={() => setViewDoc(doc)}
+                      >
+                        <Eye className="w-4 h-4" />
+                        {t("view_doc", lang)}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full gap-1.5"
+                        onClick={() => handlePrint(doc)}
+                        disabled={printingId === doc.id}
+                      >
+                        <Printer className="w-4 h-4" />
+                        {printingId === doc.id ? "..." : t("print_doc", lang)}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full gap-1.5"
+                        onClick={() => handleDownload(doc)}
+                      >
+                        <Download className="w-4 h-4" />
+                        {t("download_doc", lang)}
+                      </Button>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {viewDoc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6"
+            onClick={() => setViewDoc(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-primary to-primary/80 text-white p-5 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold">{viewDoc.title}</h3>
+                  <p className="text-sm text-white/70">
+                    {typeConfig[viewDoc.type]?.label} | {viewDoc.service} | {new Date(viewDoc.date).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setViewDoc(null)}
+                  className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto max-h-[50vh]">
+                {viewDoc.referenceId && (
+                  <div className="flex items-center gap-2 mb-4 text-sm">
+                    <span className="text-muted-foreground">Reference ID:</span>
+                    <span className="font-mono font-bold text-primary">{viewDoc.referenceId}</span>
+                  </div>
+                )}
+                {viewDoc.amount && (
+                  <div className="flex items-center gap-2 mb-4 text-sm">
+                    <span className="text-muted-foreground">Amount:</span>
+                    <span className="font-bold text-lg text-green-600">{viewDoc.amount}</span>
+                  </div>
+                )}
+                <div className="bg-secondary/30 rounded-xl p-5 whitespace-pre-wrap text-sm leading-relaxed font-mono">
+                  {viewDoc.content}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-border flex items-center justify-between bg-secondary/20">
+                <p className="text-xs text-muted-foreground">
+                  Document ID: {viewDoc.id} | Suvidha Kiosk Digital Document
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="rounded-full gap-1.5" onClick={() => handlePrint(viewDoc)}>
+                    <Printer className="w-4 h-4" /> Print
+                  </Button>
+                  <Button variant="outline" size="sm" className="rounded-full gap-1.5" onClick={() => handleDownload(viewDoc)}>
+                    <Download className="w-4 h-4" /> Download
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </KioskLayout>
+  );
+}

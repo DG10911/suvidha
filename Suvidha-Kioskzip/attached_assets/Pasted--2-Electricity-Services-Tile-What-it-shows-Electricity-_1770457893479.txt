@@ -1,0 +1,228 @@
+⚡ 2️⃣ Electricity Services Tile
+
+What it shows:
+	•	Electricity icon
+	•	Quick actions:
+	•	Pay Bill
+	•	Register Complaint
+	•	New Connection
+	•	Outage Info
+
+What it does:
+	•	Fetches linked electricity consumer ID
+	•	Displays pending dues (if any)
+	•	Allows:
+	•	Bill payment
+	•	Meter issues
+	•	Billing correction
+	•	Load change
+	•	Disconnection / transfer
+
+Smart behavior:
+	•	Auto-detects outages in user area
+	•	Shows alerts if any
+
+👉 Impact: Reduces counter load & repeat visits.
+
+⸻
+
+🔥 3️⃣ Gas Services Tile
+
+What it shows:
+	•	Gas cylinder / pipeline icon
+	•	Actions:
+	•	New Connection
+	•	Delivery Issue
+	•	Leakage Emergency
+	•	Subsidy Complaint
+
+What it does:
+	•	Routes user directly to gas distributor
+	•	Enables emergency reporting (fast-track)
+	•	Stores complaint history
+
+Special feature:
+	•	Emergency gas leakage complaints bypass normal queue
+
+👉 Judge signal: Safety-first governance.
+
+⸻
+
+🚰 4️⃣ Municipal Services Tile
+
+This is a mega-service tile, broken into sub-services.
+
+a) Water Services
+	•	New connection
+	•	Leakage
+	•	Low pressure
+	•	Water quality issue
+
+b) Waste Management
+	•	Missed garbage pickup
+	•	Overflowing bins
+	•	Bulk waste
+
+c) Urban Infrastructure
+	•	Potholes
+	•	Streetlights
+	•	Drainage
+	•	Public toilets
+
+What it does:
+	•	Auto-tags ward & zone
+	•	Accepts photo evidence
+	•	AI classifies issue
+	•	Sends to correct department
+
+👉 Judge signal: Handles real city-scale problems.
+
+⸻
+
+📝 5️⃣ Complaint & Service Request Center
+
+What it shows:
+	•	“Register New Request”
+	•	“View My Requests”
+
+What it does:
+	•	Guided complaint filing
+	•	AI auto-fills description
+	•	Priority selection
+	•	Emergency fast-track option
+
+Smart features:
+	•	Detects duplicate complaints
+	•	Links collective complaints in same area
+
+👉 Outcome: Faster resolution + less overload.
+
+⸻
+
+📄 6️⃣ My Requests & Status Tracker
+
+What it shows:
+
+A list of:
+	•	All complaints
+	•	Service requests
+	•	Payments
+
+With status:
+	•	Submitted
+	•	In Progress
+	•	Resolved
+
+What it does:
+	•	Shows SLA countdown
+	•	Displays officer remarks (if allowed)
+	•	Allows reopening after resolution
+
+Extra:
+	•	QR code for tracking
+	•	Status updates via SMS / WhatsApp
+
+👉 Judge signal: Transparency & accountability.
+
+⸻
+
+📎 7️⃣ Documents & Receipts Section
+
+What it shows:
+	•	Downloaded receipts
+	•	Submitted documents
+	•	Certificates (if any)
+
+What it does:
+	•	Allows:
+	•	View
+	•	Print
+	•	Re-download
+	•	Keeps everything paperless
+
+Security:
+	•	Masked sensitive data
+	•	Time-bound access
+
+👉 Impact: Digital governance maturity.
+
+⸻
+
+🔔 8️⃣ Notifications & Alerts Panel
+
+What it shows:
+	•	Payment confirmations
+	•	Status changes
+	•	Emergency alerts
+	•	Department notices
+
+What it does:
+	•	Keeps citizen informed
+	•	Reduces uncertainty
+	•	Syncs with SMS & WhatsApp
+
+👉 Judge signal: Citizen trust & engagement.
+
+⸻
+
+🤖 9️⃣ AI Smart Assistant Button (Always Available)
+
+What it does:
+	•	Answers questions in natural language
+	•	Helps fill forms
+	•	Explains next steps
+	•	Supports voice & text
+	•	Works in selected language
+
+Example:
+
+“Check my water complaint status”
+
+👉 Judge signal: AI used meaningfully, not as gimmick.
+
+⸻
+
+♿ 🔊 1️⃣0️⃣ Accessibility Control Panel
+
+What it shows:
+	•	Toggle voice guidance
+	•	Text size control
+	•	Contrast mode
+
+What it does:
+	•	Can be changed anytime
+	•	Saves preferences automatically
+	•	Applies instantly
+
+👉 Judge signal: Inclusive by design.
+
+⸻
+
+⚙️ 1️⃣1️⃣ Profile & Preferences
+
+What it shows:
+	•	Linked services
+	•	Preferred language
+	•	Login methods enabled (Face / QR)
+
+What it does:
+	•	Manage preferences
+	•	Disable face or QR login
+	•	Update accessibility options
+
+👉 Judge signal: User control + consent.
+
+⸻
+
+🚪 1️⃣2️⃣ Logout Button (Very Important)
+
+What it does:
+	•	Ends session securely
+	•	Clears kiosk memory
+	•	Returns to welcome screen
+
+Safety:
+	•	Auto logout after inactivity
+	•	No data remains on kiosk
+
+👉 Judge signal: Security awareness.
