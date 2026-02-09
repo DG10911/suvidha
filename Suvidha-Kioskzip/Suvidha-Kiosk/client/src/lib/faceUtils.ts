@@ -366,7 +366,8 @@ export async function performLivenessCheck(
   await new Promise(r => setTimeout(r, 300));
   const textures = straightFrames.map(f => f.texture);
   const avgTexture = textures.reduce((a, b) => a + b, 0) / textures.length;
-  if (avgTexture < 400) {
+  console.log("[Liveness] Texture variance:", avgTexture);
+  if (avgTexture < 80) {
     result.checks.textureAnalysis = false;
     onProgress?.("textureAnalysis", "failed");
     result.message = "Flat texture detected - this appears to be a photo or screen, not a real face.";
@@ -385,15 +386,26 @@ export async function performLivenessCheck(
   const avgColorVariance = straightFrames.reduce((a, b) => a + b.color.colorVariance, 0) / straightFrames.length;
   const avgBrightnessUniformity = straightFrames.reduce((a, b) => a + b.color.brightnessUniformity, 0) / straightFrames.length;
 
-  let screenScore = 0;
-  if (avgMoire > 0.15) screenScore += 2;
-  if (avgReflection > 0.05) screenScore += 1;
-  if (avgBlueRatio > 0.15) screenScore += 2;
-  if (avgSatVariance < 0.005) screenScore += 1;
-  if (avgColorVariance < 300) screenScore += 1;
-  if (avgBrightnessUniformity < 500) screenScore += 1;
+  console.log("[Liveness] Screen analysis:", {
+    moire: avgMoire.toFixed(4),
+    reflection: avgReflection.toFixed(4),
+    blueRatio: avgBlueRatio.toFixed(4),
+    satVariance: avgSatVariance.toFixed(6),
+    colorVariance: avgColorVariance.toFixed(2),
+    brightnessUniformity: avgBrightnessUniformity.toFixed(2),
+  });
 
-  if (screenScore >= 4) {
+  let screenScore = 0;
+  if (avgMoire > 0.25) screenScore += 2;
+  if (avgReflection > 0.08) screenScore += 1;
+  if (avgBlueRatio > 0.20) screenScore += 2;
+  if (avgSatVariance < 0.002) screenScore += 1;
+  if (avgColorVariance < 150) screenScore += 1;
+  if (avgBrightnessUniformity < 200) screenScore += 1;
+
+  console.log("[Liveness] Screen score:", screenScore);
+
+  if (screenScore >= 5) {
     result.checks.screenDetection = false;
     onProgress?.("screenDetection", "failed");
     result.message = "Screen or printed photo detected. Please use your real face.";
