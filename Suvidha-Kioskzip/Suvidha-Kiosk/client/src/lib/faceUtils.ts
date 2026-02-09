@@ -37,7 +37,7 @@ export interface LivenessResult {
 
 export type LivenessStepKey = keyof LivenessResult["checks"];
 
-function analyzeEyeOpenness(landmarks: faceapi.FaceLandmarks68): { leftOpen: number; rightOpen: number } {
+function analyzeEyeOpenness(landmarks: faceapi.FaceLandmarks68): { leftOpen: number; rightOpen: number; leftHeight: number; rightHeight: number } {
   const positions = landmarks.positions;
 
   const leftEyeTop = (positions[37].y + positions[38].y) / 2;
@@ -56,7 +56,7 @@ function analyzeEyeOpenness(landmarks: faceapi.FaceLandmarks68): { leftOpen: num
   const rightEyeWidth = Math.abs(rightEyeRight - rightEyeLeft);
   const rightEAR = rightEyeHeight / (rightEyeWidth + 0.001);
 
-  return { leftOpen: leftEAR, rightOpen: rightEAR };
+  return { leftOpen: leftEAR, rightOpen: rightEAR, leftHeight: leftEyeHeight, rightHeight: rightEyeHeight };
 }
 
 function getMouthOpenness(landmarks: faceapi.FaceLandmarks68): number {
@@ -473,21 +473,21 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Blink detection (temporal EAR with hysteresis + face-loss tolerance) ──
+  // ── STEP 5: Blink detection (eye height delta with hysteresis + face-loss tolerance) ──
   onProgress?.("blinkDetected", "checking");
   onInstruction?.("Now blink your eyes naturally");
 
   let blinkDetected = false;
   let blinkFrames: typeof allFrames = [];
-  let baselineEar = straightFrames.reduce((a, b) => a + (b.eyes.leftOpen + b.eyes.rightOpen) / 2, 0) / straightFrames.length;
-  console.log("[Liveness] Baseline EAR:", baselineEar.toFixed(4));
+  const baselineHeight = straightFrames.reduce((a, b) => a + (b.eyes.leftHeight + b.eyes.rightHeight) / 2, 0) / straightFrames.length;
+  console.log("[Liveness] Baseline eye height:", baselineHeight.toFixed(2), "px");
 
-  const EAR_CLOSE = baselineEar * 0.85;
-  const EAR_OPEN = baselineEar * 0.95;
+  const HEIGHT_CLOSE = baselineHeight * 0.60;
+  const HEIGHT_OPEN = baselineHeight * 0.80;
   const BLINK_MIN_MS = 120;
   const BLINK_MAX_MS = 450;
 
-  console.log("[Liveness] Blink thresholds - close:", EAR_CLOSE.toFixed(4), "open:", EAR_OPEN.toFixed(4));
+  console.log("[Liveness] Blink thresholds - close:", HEIGHT_CLOSE.toFixed(2), "open:", HEIGHT_OPEN.toFixed(2));
 
   {
     let eyeState: "OPEN" | "CLOSED" = "OPEN";
@@ -516,19 +516,19 @@ export async function performLivenessCheck(
       } else {
         lastSeenTime = now;
         blinkFrames.push(data);
-        const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
+        const eyeH = (data.eyes.leftHeight + data.eyes.rightHeight) / 2;
 
-        console.log("[Liveness] EAR:", ear.toFixed(4), "state:", eyeState, "faceDetected: true");
+        console.log("[Liveness] eyeH:", eyeH.toFixed(2), "state:", eyeState, "faceDetected: true");
 
-        if (ear < EAR_CLOSE && eyeState === "OPEN") {
+        if (eyeH < HEIGHT_CLOSE && eyeState === "OPEN") {
           eyeState = "CLOSED";
           blinkStartTime = now;
-          console.log("[Liveness] Eyes closed, EAR:", ear.toFixed(4));
+          console.log("[Liveness] Eyes closed, eyeH:", eyeH.toFixed(2));
         }
 
-        if (ear > EAR_OPEN && eyeState === "CLOSED") {
+        if (eyeH > HEIGHT_OPEN && eyeState === "CLOSED") {
           const duration = now - blinkStartTime;
-          console.log("[Liveness] Eyes reopened, duration:", duration.toFixed(0), "ms, EAR:", ear.toFixed(4));
+          console.log("[Liveness] Eyes reopened, duration:", duration.toFixed(0), "ms, eyeH:", eyeH.toFixed(2));
 
           if (duration >= BLINK_MIN_MS && duration <= BLINK_MAX_MS) {
             blinkCount++;
