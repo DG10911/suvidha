@@ -51,8 +51,9 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
 - Steps: face detect (5 frames) → texture → screen check → eyes → blink (critical, wait) → motion → identity
 - Face detection: retry with 3 configs (512/416/320) for robust detection across lighting/distances
-- Blink detection: adaptive EAR thresholds based on user's baseline eye openness, 10s timeout, 150ms polling
-- Blink is now a critical check (required to pass), motion is soft (informational)
+- Blink detection: adaptive EAR thresholds (close=0.75*baseline cap 0.19, open=0.80*baseline floor 0.18), 10s timeout, 100ms polling
+- Blink detection handles face-lost events: if face disappears while eyes were open, counts as blink when face reappears with open eyes
+- Blink is now a critical check (required to pass), motion is soft (informational, threshold 0.3)
 - Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 4+ indicators)
 - Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
 - Identity consistency: 0.55 distance threshold, 55% pair consistency, requires ≥3 frames

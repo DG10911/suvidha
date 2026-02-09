@@ -480,31 +480,53 @@ export async function performLivenessCheck(
   let blinkFrames: typeof allFrames = [];
   let blinkCount = 0;
   let eyeWasOpen = true;
+  let faceLostWhileOpen = false;
   let baselineEar = straightFrames.reduce((a, b) => a + (b.eyes.leftOpen + b.eyes.rightOpen) / 2, 0) / straightFrames.length;
   console.log("[Liveness] Baseline EAR:", baselineEar.toFixed(4));
 
-  const blinkCloseThreshold = Math.min(baselineEar * 0.65, 0.16);
-  const blinkOpenThreshold = Math.max(baselineEar * 0.85, 0.19);
+  const blinkCloseThreshold = Math.min(baselineEar * 0.75, 0.19);
+  const blinkOpenThreshold = Math.max(baselineEar * 0.80, 0.18);
 
-  blinkDetected = await waitForCondition(
-    video,
-    (data) => {
-      const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
-      const isOpen = ear > blinkOpenThreshold;
-      const isClosed = ear < blinkCloseThreshold;
+  {
+    const blinkStart = Date.now();
+    const blinkTimeout = 10000;
+    const blinkPoll = 100;
+    while (Date.now() - blinkStart < blinkTimeout) {
+      const det = await detectOnce(video);
+      if (det) {
+        const data = await captureFrameData(video, det);
+        if (data) {
+          blinkFrames.push(data);
+          const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
+          const isOpen = ear > blinkOpenThreshold;
+          const isClosed = ear < blinkCloseThreshold;
 
-      if (eyeWasOpen && isClosed) {
-        blinkCount++;
-        console.log("[Liveness] Blink #" + blinkCount + " detected, EAR:", ear.toFixed(4));
+          if (faceLostWhileOpen && isOpen) {
+            blinkCount++;
+            console.log("[Liveness] Blink detected (face-lost recovery), EAR:", ear.toFixed(4));
+            faceLostWhileOpen = false;
+          }
+
+          if (eyeWasOpen && isClosed) {
+            blinkCount++;
+            console.log("[Liveness] Blink #" + blinkCount + " detected, EAR:", ear.toFixed(4));
+          }
+          if (isOpen) { eyeWasOpen = true; faceLostWhileOpen = false; }
+          if (isClosed) eyeWasOpen = false;
+
+          onFaceUpdate?.(data.position);
+          if (blinkCount >= 1) { blinkDetected = true; break; }
+        }
+      } else {
+        if (eyeWasOpen) {
+          faceLostWhileOpen = true;
+          eyeWasOpen = false;
+          console.log("[Liveness] Face lost during blink check (possible eye closure)");
+        }
       }
-      if (isOpen) eyeWasOpen = true;
-      if (isClosed) eyeWasOpen = false;
-
-      onFaceUpdate?.(data.position);
-      return blinkCount >= 1;
-    },
-    10000, 150, blinkFrames
-  );
+      await new Promise(r => setTimeout(r, blinkPoll));
+    }
+  }
 
   if (blinkFrames.length > 0) {
     allFrames.push(...blinkFrames);
@@ -531,7 +553,7 @@ export async function performLivenessCheck(
     }
     const avgMotion = totalMotion / (positions.length - 1);
     console.log("[Liveness] Avg motion:", avgMotion.toFixed(2));
-    result.checks.motionDetected = avgMotion > 0.8;
+    result.checks.motionDetected = avgMotion > 0.3;
   }
   onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
 
