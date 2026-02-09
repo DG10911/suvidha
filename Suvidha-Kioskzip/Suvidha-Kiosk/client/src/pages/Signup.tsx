@@ -188,9 +188,11 @@ export default function Signup() {
       if (fb && vid.videoWidth > 0) {
         const scaleX = oc.width / vid.videoWidth;
         const scaleY = oc.height / vid.videoHeight;
-        const pad = 15;
-        const fx = fb.x * scaleX - pad;
-        const fy = fb.y * scaleY - pad;
+        const pad = 20;
+        const rawX = (fb.x - fb.width / 2) * scaleX;
+        const rawY = (fb.y - fb.height / 2) * scaleY;
+        const fx = rawX - pad;
+        const fy = rawY - pad;
         const fw = fb.width * scaleX + pad * 2;
         const fh = fb.height * scaleY + pad * 2;
         const cx = fx + fw / 2;

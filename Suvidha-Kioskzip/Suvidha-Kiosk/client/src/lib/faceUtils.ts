@@ -485,11 +485,11 @@ export async function performLivenessCheck(
       console.log("[Liveness] Mouth openness:", openness.toFixed(4), "baseline:", baselineMouth.toFixed(4));
       onFaceUpdate?.(data.position);
 
-      if (openness > 0.35 && openness > baselineMouth * 2.5) {
+      if (!mouthWasOpen && openness > 0.22 && openness > baselineMouth + 0.08) {
         mouthWasOpen = true;
         onInstruction?.("✅ Good! Now close your mouth");
       }
-      if (mouthWasOpen && openness < 0.15) {
+      if (mouthWasOpen && openness < baselineMouth + 0.03) {
         mouthClosed = true;
       }
       return mouthWasOpen && mouthClosed;
