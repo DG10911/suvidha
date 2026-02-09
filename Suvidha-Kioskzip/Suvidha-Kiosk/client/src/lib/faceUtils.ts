@@ -408,7 +408,7 @@ export async function performLivenessCheck(
 
   // ── STEP 1: Detect face (look straight) ──
   onProgress?.("faceDetected", "checking");
-  onInstruction?.("Look straight at the camera");
+  onInstruction?.("Hold still and look at the camera");
 
   let baselineYaw = 0;
   let straightFrames: typeof allFrames = [];
@@ -501,36 +501,45 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Blink detection (MediaPipe FaceMesh blendshapes) ──
+  // ── STEP 5: Blink + Motion detection (MediaPipe blendshapes + nose drift) ──
   onProgress?.("blinkDetected", "checking");
-  onInstruction?.("Now blink your eyes naturally");
+  onInstruction?.("Blink naturally a couple of times");
 
   let blinkDetected = false;
   let motionFound = false;
 
-  const BLINK_CLOSE_THRESHOLD = 0.4;
-  const BLINK_OPEN_THRESHOLD = 0.2;
-  const BLINK_MIN_MS = 80;
-  const BLINK_MAX_MS = 500;
+  const BLINK_CLOSE_THRESHOLD = 0.35;
+  const BLINK_OPEN_THRESHOLD = 0.15;
+  const BLINK_MIN_MS = 60;
+  const BLINK_MAX_MS = 600;
+  const BLINK_CONSECUTIVE_FRAMES = 2;
   const MOTION_THRESHOLD = 0.012;
+  const WARMUP_MS = 700;
 
   if (mediapipeLandmarker) {
     let eyeState: "OPEN" | "CLOSED" = "OPEN";
+    let closedFrameCount = 0;
     let blinkStartTime = 0;
     let blinkCount = 0;
     const blinkStart = Date.now();
-    const blinkTimeout = 10000;
+    const blinkTimeout = 8000;
     const blinkPoll = 60;
 
     type NosePos = { x: number; y: number };
     let lastNose: NosePos | null = null;
     let lastVideoTime = -1;
+    const warmupEnd = performance.now() + WARMUP_MS;
 
-    console.log("[MediaPipe] Starting blink detection with blendshapes");
+    console.log("[MediaPipe] Starting blink detection with blendshapes (warmup:", WARMUP_MS, "ms)");
 
     while (Date.now() - blinkStart < blinkTimeout) {
       const now = performance.now();
       const currentTime = video.currentTime;
+
+      if (now < warmupEnd) {
+        await new Promise(r => setTimeout(r, blinkPoll));
+        continue;
+      }
 
       if (currentTime !== lastVideoTime) {
         lastVideoTime = currentTime;
@@ -549,12 +558,15 @@ export async function performLivenessCheck(
           const blinkR = blendshapes.find(c => c.categoryName === "eyeBlinkRight")?.score ?? 0;
           const blinkScore = (blinkL + blinkR) / 2;
 
-          console.log("[MediaPipe] blinkL:", blinkL.toFixed(3), "blinkR:", blinkR.toFixed(3), "avg:", blinkScore.toFixed(3), "state:", eyeState);
-
-          if (blinkScore > BLINK_CLOSE_THRESHOLD && eyeState === "OPEN") {
-            eyeState = "CLOSED";
-            blinkStartTime = now;
-            console.log("[MediaPipe] Eyes CLOSED, score:", blinkScore.toFixed(3));
+          if (blinkScore > BLINK_CLOSE_THRESHOLD) {
+            closedFrameCount++;
+            if (closedFrameCount >= BLINK_CONSECUTIVE_FRAMES && eyeState === "OPEN") {
+              eyeState = "CLOSED";
+              blinkStartTime = now;
+              console.log("[MediaPipe] Eyes CLOSED (persisted", closedFrameCount, "frames), score:", blinkScore.toFixed(3));
+            }
+          } else {
+            closedFrameCount = 0;
           }
 
           if (blinkScore < BLINK_OPEN_THRESHOLD && eyeState === "CLOSED") {
@@ -599,8 +611,13 @@ export async function performLivenessCheck(
     let blinkStartTime = 0;
     let blinkCount = 0;
     const blinkStart = Date.now();
+    const warmupEnd = performance.now() + WARMUP_MS;
 
-    while (Date.now() - blinkStart < 10000) {
+    while (Date.now() - blinkStart < 8000) {
+      if (performance.now() < warmupEnd) {
+        await new Promise(r => setTimeout(r, 80));
+        continue;
+      }
       const det = await detectOnce(video);
       if (det) {
         const data = await captureFrameData(video, det);
@@ -610,7 +627,7 @@ export async function performLivenessCheck(
           if (eyeH < HEIGHT_CLOSE && eyeState === "OPEN") { eyeState = "CLOSED"; blinkStartTime = now; }
           if (eyeH > HEIGHT_OPEN && eyeState === "CLOSED") {
             const dur = now - blinkStartTime;
-            if (dur >= 80 && dur <= 500) blinkCount++;
+            if (dur >= 60 && dur <= 600) blinkCount++;
             eyeState = "OPEN";
           }
           onFaceUpdate?.(data.position);
@@ -624,8 +641,11 @@ export async function performLivenessCheck(
   result.checks.blinkDetected = blinkDetected;
   onProgress?.("blinkDetected", blinkDetected ? "passed" : "failed");
   if (blinkDetected) {
-    onInstruction?.("✅ Blink detected!");
-    await new Promise(r => setTimeout(r, 400));
+    onInstruction?.("Blink detected! Checking motion...");
+    await new Promise(r => setTimeout(r, 300));
+  } else {
+    onInstruction?.("Now move your head slightly");
+    await new Promise(r => setTimeout(r, 300));
   }
 
   // ── STEP 6: Motion check (MediaPipe nose drift or face-api fallback) ──
@@ -677,32 +697,31 @@ export async function performLivenessCheck(
   }
 
   // ── Final gating ──
-  const criticalChecks = [
+  // Core checks must always pass (anti-spoof)
+  const coreChecks = [
     result.checks.faceDetected,
     result.checks.textureAnalysis,
     result.checks.screenDetection,
     result.checks.eyeOpenness,
-    result.checks.blinkDetected,
     result.checks.consistentDescriptor,
   ];
 
-  const softChecks = [
-    result.checks.motionDetected,
-  ];
+  // Liveness: blink OR motion (either one proves it's a live person)
+  const livenessOR = result.checks.blinkDetected || result.checks.motionDetected;
 
-  const criticalPassed = criticalChecks.every(c => c);
-  const softPassed = true;
+  const corePassed = coreChecks.every(c => c);
+  result.isLive = corePassed && livenessOR;
 
-  result.isLive = criticalPassed && softPassed;
+  console.log("[Liveness] Final: core=" + corePassed + ", blink=" + blinkDetected + ", motion=" + motionFound + ", liveness(OR)=" + livenessOR);
 
   if (result.isLive) {
-    onInstruction?.("✅ All checks passed! Face verified.");
+    onInstruction?.("All checks passed! Face verified.");
     result.message = "Liveness verified. Real face confirmed.";
   } else {
     const failed = [];
     if (!result.checks.screenDetection) failed.push("screen/photo detected");
     if (!result.checks.textureAnalysis) failed.push("flat texture");
-    if (!result.checks.blinkDetected) failed.push("blink not detected");
+    if (!livenessOR) failed.push("no blink or movement detected");
     if (!result.checks.eyeOpenness) failed.push("eyes not properly detected");
     result.message = failed.length > 0
       ? `Liveness check failed: ${failed.join(". ")}. Please use your real face and follow instructions.`
@@ -815,8 +834,8 @@ export function initLivenessSteps() {
     { key: "textureAnalysis" as const, label: "Texture & Anti-Spoof", status: "pending" as const },
     { key: "screenDetection" as const, label: "Screen/Photo Detection", status: "pending" as const },
     { key: "eyeOpenness" as const, label: "Eye & Retina Scan", status: "pending" as const },
-    { key: "blinkDetected" as const, label: "Blink Detection", status: "pending" as const },
-    { key: "motionDetected" as const, label: "Motion Analysis", status: "pending" as const },
+    { key: "blinkDetected" as const, label: "Blink Check", status: "pending" as const },
+    { key: "motionDetected" as const, label: "Movement Check", status: "pending" as const },
     { key: "consistentDescriptor" as const, label: "Identity Consistency", status: "pending" as const },
   ];
 }

@@ -7,13 +7,14 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Overhauled liveness detection to 8-layer security with challenge-response verification
 - Screen/photo detection: moire patterns, color histogram, blue ratio, saturation, brightness uniformity, reflection analysis
 - Removed mouth open/close detection step from liveness flow
-- Blink detection: EAR transition tracking (open->closed transitions)
+- Blink detection: MediaPipe blendshapes with consecutive frame persistence + time validation
 - All checks now use face-region-only analysis for better accuracy
-- Added real-time instructions during scan ("blink")
+- Added guided step-by-step instructions during scan
 - Impressive scanning overlay: glowing rays, laser scan line with trail, grid pattern, floating particles, data readout HUD
 - Captured frame thumbnails shown during verification
-- Critical checks (face, texture, screen, eyes, identity) ALL must pass
-- Soft checks (blink, motion) at least 1 must pass
+- Core checks (face, texture, screen, eyes, identity) ALL must pass
+- Liveness: blink OR motion (either proves live person, not both required)
+- 700ms warm-up delay before blink/motion evaluation starts
 - Duplicate face prevention on server side (0.45 threshold)
 - Twilio integration connected for OTP/SMS
 
@@ -49,12 +50,13 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 ## Design Decisions
 - Face matching threshold: 0.6 (login), Duplicate detection: 0.45 (stricter)
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
-- Steps: face detect (5 frames) → texture → screen check → eyes → blink (critical, wait) → motion → identity
+- Steps: face detect (5 frames) → texture → screen check → eyes → blink/motion (OR logic) → identity
 - Face detection: retry with 3 configs (512/416/320) for robust detection across lighting/distances
-- Blink detection: MediaPipe FaceLandmarker blendshapes (eyeBlinkLeft/eyeBlinkRight scores 0-1), close>0.4, open<0.2, time-validated (80-500ms), 60ms polling
+- Blink detection: MediaPipe FaceLandmarker blendshapes (eyeBlinkLeft/eyeBlinkRight scores 0-1), close>0.35, open<0.15, consecutive 2+ frames required, time-validated (60-600ms), 60ms polling, 700ms warmup
 - Blink uses state machine (OPEN→CLOSED→OPEN) with duration check, falls back to face-api.js eye height if MediaPipe unavailable
-- Blink is now a critical check (required to pass), motion is soft (informational)
+- Liveness gate: blink OR motion must pass (not both required) - industry-standard approach
 - Motion detection: MediaPipe nose landmark drift (threshold 0.012), falls back to face-api.js frame-to-frame nose drift
+- Blink window: 8 seconds with guided instructions
 - Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 4+ indicators)
 - Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
 - Identity consistency: 0.55 distance threshold, 55% pair consistency, requires ≥3 frames
