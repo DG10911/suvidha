@@ -6,12 +6,13 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 ## Recent Changes (Feb 2026)
 - Overhauled liveness detection to 8-layer security with challenge-response verification
 - Screen/photo detection: moire patterns, color histogram, blue ratio, saturation, brightness uniformity, reflection analysis
-- Head movement: phase-aware yaw tracking (straight->right->left) with directional verification
+- Mouth open/close detection: replaces head movement (more reliable with face-api.js 68-landmark model)
 - Blink detection: EAR transition tracking (open->closed transitions)
 - All checks now use face-region-only analysis for better accuracy
-- Added real-time instructions during scan ("turn right", "turn left", "blink")
+- Added real-time instructions during scan ("open mouth", "blink")
+- Impressive scanning overlay: glowing rays, laser scan line with trail, grid pattern, floating particles, data readout HUD
 - Captured frame thumbnails shown during verification
-- Critical checks (face, texture, screen, eyes, head movement, identity) ALL must pass
+- Critical checks (face, texture, screen, eyes, mouth action, identity) ALL must pass
 - Soft checks (blink, motion) at least 1 must pass
 - Duplicate face prevention on server side (0.45 threshold)
 - Twilio integration connected for OTP/SMS
@@ -48,11 +49,11 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 ## Design Decisions
 - Face matching threshold: 0.6 (login), Duplicate detection: 0.45 (stricter)
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
-- Steps: face detect → texture → screen check → eyes → turn RIGHT (wait) → turn LEFT (wait) → blink (wait) → motion → identity
-- Head movement: yaw-based detection (threshold 0.04) with directional enforcement - left must be opposite direction from right
-- Each action step has 12 second timeout for head turns, 8 second for blink, polls every 200ms
+- Steps: face detect → texture → screen check → eyes → open mouth (wait) → blink (wait) → motion → identity
+- Mouth detection: MAR (mouth aspect ratio) threshold 0.35, must open then close - photos can't do this
+- Each action step has 10 second timeout for mouth, 8 second for blink, polls every 200ms
 - Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 5+ indicators)
-- Real-time face tracking canvas overlay: draws bounding box, corner markers, scan line, and crosshair markers on detected face during liveness check
+- Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
 - Identity consistency: 0.5 distance threshold, 60% pair consistency (relaxed for head turns)
 - Speech queue: 150ms pre-speak delay, 200ms inter-queue delay, 800ms language change delay
 

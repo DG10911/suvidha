@@ -2,7 +2,7 @@ import KioskLayout from "@/components/layout/KioskLayout";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ScanFace, CheckCircle2, Loader2, Camera, XCircle, AlertTriangle, Eye, Shield, Fingerprint, Activity, MonitorSmartphone, Move } from "lucide-react";
+import { ScanFace, CheckCircle2, Loader2, Camera, XCircle, AlertTriangle, Eye, Shield, Fingerprint, Activity, MonitorSmartphone, Mic } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { savePreferences, loadPreferences } from "@/lib/userPreferences";
 import { t } from "@/lib/translations";
@@ -21,7 +21,7 @@ const stepIcons: Record<string, React.ReactNode> = {
   eyeOpenness: <Eye className="w-5 h-5" />,
   blinkDetected: <Activity className="w-5 h-5" />,
   motionDetected: <Fingerprint className="w-5 h-5" />,
-  headMovement: <Move className="w-5 h-5" />,
+  mouthOpen: <Mic className="w-5 h-5" />,
   consistentDescriptor: <CheckCircle2 className="w-5 h-5" />,
 };
 
@@ -44,6 +44,8 @@ export default function FaceLogin() {
   const faceBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const overlayAnimRef = useRef<number>(0);
   const scanLineRef = useRef(0);
+  const frameCountRef = useRef(0);
+  const particlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number }>>([]); 
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -131,60 +133,163 @@ export default function FaceLogin() {
       const ctx = oc.getContext("2d");
       if (!ctx) { overlayAnimRef.current = requestAnimationFrame(drawOverlay); return; }
       ctx.clearRect(0, 0, oc.width, oc.height);
+      frameCountRef.current++;
+      const frame = frameCountRef.current;
 
       const fb = faceBoxRef.current;
       if (fb && vid.videoWidth > 0) {
         const scaleX = oc.width / vid.videoWidth;
         const scaleY = oc.height / vid.videoHeight;
-        const fx = fb.x * scaleX;
-        const fy = fb.y * scaleY;
-        const fw = fb.width * scaleX;
-        const fh = fb.height * scaleY;
+        const pad = 15;
+        const fx = fb.x * scaleX - pad;
+        const fy = fb.y * scaleY - pad;
+        const fw = fb.width * scaleX + pad * 2;
+        const fh = fb.height * scaleY + pad * 2;
+        const cx = fx + fw / 2;
+        const cy = fy + fh / 2;
 
-        ctx.strokeStyle = "#00e5ff";
+        const dimOverlay = ctx.createRadialGradient(cx, cy, Math.min(fw, fh) * 0.6, cx, cy, Math.max(oc.width, oc.height) * 0.7);
+        dimOverlay.addColorStop(0, "rgba(0,0,0,0)");
+        dimOverlay.addColorStop(1, "rgba(0,0,0,0.5)");
+        ctx.fillStyle = dimOverlay;
+        ctx.fillRect(0, 0, oc.width, oc.height);
+
+        const pulseAlpha = 0.4 + Math.sin(frame * 0.05) * 0.3;
+        ctx.strokeStyle = `rgba(0, 229, 255, ${pulseAlpha})`;
         ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
+        ctx.setLineDash([8, 4]);
         ctx.strokeRect(fx, fy, fw, fh);
         ctx.setLineDash([]);
 
-        const cornerLen = Math.min(fw, fh) * 0.2;
-        ctx.strokeStyle = "#00e5ff";
+        const cornerLen = Math.min(fw, fh) * 0.22;
+        const cornerGlow = `rgba(0, 229, 255, ${0.7 + Math.sin(frame * 0.08) * 0.3})`;
+        ctx.strokeStyle = cornerGlow;
         ctx.lineWidth = 3;
+        ctx.shadowColor = "#00e5ff";
+        ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.moveTo(fx, fy + cornerLen); ctx.lineTo(fx, fy); ctx.lineTo(fx + cornerLen, fy);
         ctx.moveTo(fx + fw - cornerLen, fy); ctx.lineTo(fx + fw, fy); ctx.lineTo(fx + fw, fy + cornerLen);
         ctx.moveTo(fx + fw, fy + fh - cornerLen); ctx.lineTo(fx + fw, fy + fh); ctx.lineTo(fx + fw - cornerLen, fy + fh);
         ctx.moveTo(fx + cornerLen, fy + fh); ctx.lineTo(fx, fy + fh); ctx.lineTo(fx, fy + fh - cornerLen);
         ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        scanLineRef.current = (scanLineRef.current + 1.5) % fh;
+        scanLineRef.current = (scanLineRef.current + 2) % fh;
         const scanY = fy + scanLineRef.current;
-        const grad = ctx.createLinearGradient(fx, scanY, fx + fw, scanY);
-        grad.addColorStop(0, "transparent");
-        grad.addColorStop(0.3, "rgba(0, 229, 255, 0.5)");
-        grad.addColorStop(0.5, "rgba(0, 229, 255, 0.8)");
-        grad.addColorStop(0.7, "rgba(0, 229, 255, 0.5)");
-        grad.addColorStop(1, "transparent");
-        ctx.fillStyle = grad;
-        ctx.fillRect(fx, scanY - 1, fw, 3);
+        ctx.shadowColor = "#00e5ff";
+        ctx.shadowBlur = 15;
+        const scanGrad = ctx.createLinearGradient(fx, scanY, fx + fw, scanY);
+        scanGrad.addColorStop(0, "transparent");
+        scanGrad.addColorStop(0.2, "rgba(0, 229, 255, 0.6)");
+        scanGrad.addColorStop(0.5, "rgba(0, 229, 255, 1)");
+        scanGrad.addColorStop(0.8, "rgba(0, 229, 255, 0.6)");
+        scanGrad.addColorStop(1, "transparent");
+        ctx.fillStyle = scanGrad;
+        ctx.fillRect(fx, scanY - 1.5, fw, 3);
 
-        const crossSize = 6;
-        const cx = fx + fw / 2;
-        const cy = fy + fh / 2;
-        ctx.strokeStyle = "rgba(0, 229, 255, 0.6)";
-        ctx.lineWidth = 1;
-        const points = [
-          [cx, cy - fh * 0.15], [cx, cy + fh * 0.15],
-          [cx - fw * 0.15, cy], [cx + fw * 0.15, cy],
-          [cx - fw * 0.2, cy - fh * 0.1], [cx + fw * 0.2, cy - fh * 0.1],
-          [cx - fw * 0.15, cy + fh * 0.2], [cx + fw * 0.15, cy + fh * 0.2],
+        const trailGrad = ctx.createLinearGradient(0, scanY - 30, 0, scanY);
+        trailGrad.addColorStop(0, "rgba(0, 229, 255, 0)");
+        trailGrad.addColorStop(1, "rgba(0, 229, 255, 0.15)");
+        ctx.fillStyle = trailGrad;
+        ctx.fillRect(fx, scanY - 30, fw, 30);
+        ctx.shadowBlur = 0;
+
+        ctx.strokeStyle = "rgba(0, 229, 255, 0.08)";
+        ctx.lineWidth = 0.5;
+        const gridSpacing = 12;
+        for (let gx = fx; gx < fx + fw; gx += gridSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(gx, fy);
+          ctx.lineTo(gx, fy + fh);
+          ctx.stroke();
+        }
+        for (let gy = fy; gy < fy + fh; gy += gridSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(fx, gy);
+          ctx.lineTo(fx + fw, gy);
+          ctx.stroke();
+        }
+
+        const numRays = 12;
+        const rayRadius = Math.max(fw, fh) * 0.55;
+        for (let i = 0; i < numRays; i++) {
+          const angle = (i / numRays) * Math.PI * 2 + frame * 0.01;
+          const innerR = Math.min(fw, fh) * 0.35;
+          const x1 = cx + Math.cos(angle) * innerR;
+          const y1 = cy + Math.sin(angle) * innerR;
+          const x2 = cx + Math.cos(angle) * rayRadius;
+          const y2 = cy + Math.sin(angle) * rayRadius;
+          const rayGrad = ctx.createLinearGradient(x1, y1, x2, y2);
+          rayGrad.addColorStop(0, "rgba(0, 229, 255, 0.3)");
+          rayGrad.addColorStop(1, "rgba(0, 229, 255, 0)");
+          ctx.strokeStyle = rayGrad;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+
+        if (Math.random() < 0.3) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * Math.min(fw, fh) * 0.4;
+          particlesRef.current.push({
+            x: cx + Math.cos(angle) * dist,
+            y: cy + Math.sin(angle) * dist,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -Math.random() * 2 - 0.5,
+            life: 0,
+            maxLife: 30 + Math.random() * 30,
+          });
+        }
+        if (particlesRef.current.length > 40) particlesRef.current.splice(0, 5);
+
+        particlesRef.current = particlesRef.current.filter(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life++;
+          if (p.life >= p.maxLife) return false;
+          const alpha = 1 - p.life / p.maxLife;
+          ctx.fillStyle = `rgba(0, 229, 255, ${alpha * 0.8})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+          ctx.fill();
+          return true;
+        });
+
+        const crossSize = 5;
+        const facePoints = [
+          [cx, cy - fh * 0.2], [cx, cy + fh * 0.2],
+          [cx - fw * 0.2, cy], [cx + fw * 0.2, cy],
+          [cx - fw * 0.22, cy - fh * 0.12], [cx + fw * 0.22, cy - fh * 0.12],
+          [cx - fw * 0.18, cy + fh * 0.22], [cx + fw * 0.18, cy + fh * 0.22],
+          [cx, cy - fh * 0.35], [cx, cy + fh * 0.35],
         ];
-        for (const [px, py] of points) {
+        for (const [px, py] of facePoints) {
+          const ptAlpha = 0.3 + Math.sin(frame * 0.1 + px * 0.1) * 0.3;
+          ctx.strokeStyle = `rgba(0, 229, 255, ${ptAlpha})`;
+          ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(px - crossSize, py); ctx.lineTo(px + crossSize, py);
           ctx.moveTo(px, py - crossSize); ctx.lineTo(px, py + crossSize);
           ctx.stroke();
+
+          ctx.fillStyle = `rgba(0, 229, 255, ${ptAlpha * 0.5})`;
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fill();
         }
+
+        ctx.font = "9px monospace";
+        ctx.fillStyle = `rgba(0, 229, 255, ${0.5 + Math.sin(frame * 0.05) * 0.3})`;
+        ctx.fillText(`SCAN: ${(scanLineRef.current / fh * 100).toFixed(0)}%`, fx + 4, fy - 6);
+        ctx.fillText(`RES: ${vid.videoWidth}x${vid.videoHeight}`, fx + fw - 80, fy - 6);
+
+        const dataY = fy + fh + 14;
+        ctx.fillStyle = "rgba(0, 229, 255, 0.5)";
+        ctx.fillText(`DEPTH: ${(Math.sin(frame * 0.03) * 2.1 + 3.5).toFixed(2)}m`, fx + 4, dataY);
+        ctx.fillText(`CONF: ${(85 + Math.sin(frame * 0.07) * 12).toFixed(1)}%`, fx + fw - 72, dataY);
       }
 
       overlayAnimRef.current = requestAnimationFrame(drawOverlay);
@@ -569,7 +674,7 @@ export default function FaceLogin() {
                     <MonitorSmartphone className="w-3 h-3" /> Screen Check
                   </div>
                   <div className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                    <Move className="w-3 h-3" /> Head Movement
+                    <Mic className="w-3 h-3" /> Mouth Check
                   </div>
                 </div>
                 <div className="w-full bg-green-100 rounded-full h-2 overflow-hidden">

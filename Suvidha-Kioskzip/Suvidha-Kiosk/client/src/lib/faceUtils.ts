@@ -29,7 +29,7 @@ export interface LivenessResult {
     motionDetected: boolean;
     eyeOpenness: boolean;
     blinkDetected: boolean;
-    headMovement: boolean;
+    mouthOpen: boolean;
     consistentDescriptor: boolean;
   };
   message: string;
@@ -58,6 +58,17 @@ function analyzeEyeOpenness(landmarks: faceapi.FaceLandmarks68): { leftOpen: num
   const rightEAR = rightEyeHeight / (rightEyeWidth + 0.001);
 
   return { leftOpen: leftEAR, rightOpen: rightEAR };
+}
+
+function getMouthOpenness(landmarks: faceapi.FaceLandmarks68): number {
+  const positions = landmarks.positions;
+  const upperLip = positions[62];
+  const lowerLip = positions[66];
+  const mouthLeft = positions[48];
+  const mouthRight = positions[54];
+  const mouthWidth = Math.abs(mouthRight.x - mouthLeft.x);
+  const mouthHeight = Math.abs(lowerLip.y - upperLip.y);
+  return mouthHeight / (mouthWidth + 0.001);
 }
 
 function getHeadPose(landmarks: faceapi.FaceLandmarks68): { yaw: number; pitch: number } {
@@ -291,6 +302,7 @@ async function captureFrameData(video: HTMLVideoElement, detection: any) {
     descriptor: detection.descriptor as Float32Array,
     eyes: analyzeEyeOpenness(landmarks),
     pose: getHeadPose(landmarks),
+    mouthOpenness: getMouthOpenness(landmarks),
     position: { x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width, height: box.height },
     noseRelX,
     noseTipX: noseTip.x,
@@ -343,7 +355,7 @@ export async function performLivenessCheck(
       motionDetected: false,
       eyeOpenness: false,
       blinkDetected: false,
-      headMovement: false,
+      mouthOpen: false,
       consistentDescriptor: false,
     },
     message: "",
@@ -454,76 +466,52 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Turn head RIGHT (wait until detected) ──
-  onProgress?.("headMovement", "checking");
-  onInstruction?.("👉 Turn your head to the RIGHT");
+  // ── STEP 5: Open mouth detection ──
+  onProgress?.("mouthOpen", "checking");
+  onInstruction?.("😮 Open your mouth wide, then close it");
 
-  console.log("[Liveness] Baseline yaw:", baselineYaw.toFixed(4));
-  const yawThreshold = 0.04;
+  const baselineMouth = straightFrames.reduce((a, b) => a + b.mouthOpenness, 0) / straightFrames.length;
+  console.log("[Liveness] Baseline mouth openness:", baselineMouth.toFixed(4));
 
-  let rightDetected = false;
-  let rightFrames: typeof allFrames = [];
-  let rightYaw = baselineYaw;
+  let mouthOpenDetected = false;
+  let mouthWasOpen = false;
+  let mouthClosed = false;
+  let mouthFrames: typeof allFrames = [];
 
-  rightDetected = await waitForCondition(
+  mouthOpenDetected = await waitForCondition(
     video,
     (data) => {
-      const yawDelta = data.pose.yaw - baselineYaw;
-      console.log("[Liveness] RIGHT - yaw:", data.pose.yaw.toFixed(4), "delta:", yawDelta.toFixed(4));
+      const openness = data.mouthOpenness;
+      console.log("[Liveness] Mouth openness:", openness.toFixed(4), "baseline:", baselineMouth.toFixed(4));
       onFaceUpdate?.(data.position);
-      if (Math.abs(yawDelta) > yawThreshold) {
-        rightYaw = data.pose.yaw;
-        return true;
+
+      if (openness > 0.35 && openness > baselineMouth * 2.5) {
+        mouthWasOpen = true;
+        onInstruction?.("✅ Good! Now close your mouth");
       }
-      return false;
+      if (mouthWasOpen && openness < 0.15) {
+        mouthClosed = true;
+      }
+      return mouthWasOpen && mouthClosed;
     },
-    12000, 200, rightFrames
+    10000, 200, mouthFrames
   );
 
-  if (rightDetected && rightFrames.length > 0) {
-    allFrames.push(...rightFrames);
-    captureThumb(rightFrames[rightFrames.length - 1].canvas);
-    onInstruction?.("✅ Right turn detected!");
-    await new Promise(r => setTimeout(r, 800));
+  if (mouthFrames.length > 0) {
+    allFrames.push(...mouthFrames);
+    captureThumb(mouthFrames[mouthFrames.length - 1].canvas);
   }
 
-  // ── STEP 6: Turn head LEFT (must move opposite direction from right turn) ──
-  onInstruction?.("👈 Now turn your head to the LEFT");
+  result.checks.mouthOpen = mouthOpenDetected;
+  onProgress?.("mouthOpen", mouthOpenDetected ? "passed" : "failed");
 
-  let leftDetected = false;
-  let leftFrames: typeof allFrames = [];
-  const rightDirection = rightYaw > baselineYaw ? 1 : -1;
-
-  leftDetected = await waitForCondition(
-    video,
-    (data) => {
-      const yawDelta = data.pose.yaw - baselineYaw;
-      const fromRight = data.pose.yaw - rightYaw;
-      console.log("[Liveness] LEFT - yaw:", data.pose.yaw.toFixed(4), "delta:", yawDelta.toFixed(4), "fromRight:", fromRight.toFixed(4));
-      onFaceUpdate?.(data.position);
-
-      const movedFromRight = Math.abs(fromRight) > yawThreshold;
-      const oppositeDir = (rightDirection > 0 && fromRight < 0) || (rightDirection < 0 && fromRight > 0);
-      return movedFromRight && oppositeDir;
-    },
-    12000, 200, leftFrames
-  );
-
-  if (leftDetected && leftFrames.length > 0) {
-    allFrames.push(...leftFrames);
-    captureThumb(leftFrames[leftFrames.length - 1].canvas);
-    onInstruction?.("✅ Left turn detected!");
-    await new Promise(r => setTimeout(r, 800));
-  }
-
-  result.checks.headMovement = rightDetected && leftDetected;
-  onProgress?.("headMovement", result.checks.headMovement ? "passed" : "failed");
-
-  if (!result.checks.headMovement) {
-    const detail = !rightDetected ? "Right turn was not detected." : "Left turn was not detected.";
-    result.message = `Head movement not detected. ${detail} Please turn your head more noticeably when prompted.`;
+  if (!result.checks.mouthOpen) {
+    result.message = "Mouth open/close not detected. Please open your mouth wide, then close it when prompted.";
     return result;
   }
+
+  onInstruction?.("✅ Mouth action detected!");
+  await new Promise(r => setTimeout(r, 600));
 
   // ── STEP 7: Blink detection (wait until detected) ──
   onProgress?.("blinkDetected", "checking");
@@ -613,7 +601,7 @@ export async function performLivenessCheck(
     result.checks.screenDetection,
     result.checks.eyeOpenness,
     result.checks.consistentDescriptor,
-    result.checks.headMovement,
+    result.checks.mouthOpen,
   ];
 
   const softChecks = [
@@ -633,7 +621,7 @@ export async function performLivenessCheck(
     const failed = [];
     if (!result.checks.screenDetection) failed.push("screen/photo detected");
     if (!result.checks.textureAnalysis) failed.push("flat texture");
-    if (!result.checks.headMovement) failed.push("head movement not detected");
+    if (!result.checks.mouthOpen) failed.push("mouth action not detected");
     if (!result.checks.blinkDetected && !result.checks.motionDetected) failed.push("no blink or motion detected");
     if (!result.checks.eyeOpenness) failed.push("eyes not properly detected");
     result.message = failed.length > 0
@@ -749,7 +737,7 @@ export function initLivenessSteps() {
     { key: "eyeOpenness" as const, label: "Eye & Retina Scan", status: "pending" as const },
     { key: "blinkDetected" as const, label: "Blink Detection", status: "pending" as const },
     { key: "motionDetected" as const, label: "Motion Analysis", status: "pending" as const },
-    { key: "headMovement" as const, label: "Head Movement Check", status: "pending" as const },
+    { key: "mouthOpen" as const, label: "Mouth Action Check", status: "pending" as const },
     { key: "consistentDescriptor" as const, label: "Identity Consistency", status: "pending" as const },
   ];
 }
