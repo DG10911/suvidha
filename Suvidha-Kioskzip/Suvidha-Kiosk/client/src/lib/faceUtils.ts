@@ -248,6 +248,59 @@ function captureFrameAsDataURL(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL("image/jpeg", 0.5);
 }
 
+async function detectOnce(video: HTMLVideoElement) {
+  const detection = await faceapi
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
+    .withFaceLandmarks(true)
+    .withFaceDescriptor();
+  return detection || null;
+}
+
+async function captureFrameData(video: HTMLVideoElement, detection: any) {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const box = detection.detection.box;
+  const faceBox = { x: box.x, y: box.y, width: box.width, height: box.height };
+  return {
+    canvas,
+    descriptor: detection.descriptor as Float32Array,
+    eyes: analyzeEyeOpenness(detection.landmarks),
+    pose: getHeadPose(detection.landmarks),
+    position: { x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width, height: box.height },
+    faceSize: box.width * box.height,
+    texture: analyzeTextureVariance(canvas, faceBox),
+    color: analyzeColorDistribution(canvas, faceBox),
+    moire: detectScreenMoire(canvas, faceBox),
+    reflection: detectReflectionPatterns(canvas, faceBox),
+  };
+}
+
+async function waitForCondition(
+  video: HTMLVideoElement,
+  checkFn: (data: NonNullable<Awaited<ReturnType<typeof captureFrameData>>>) => boolean,
+  timeoutMs: number,
+  pollMs: number = 300,
+  collectFrames?: NonNullable<Awaited<ReturnType<typeof captureFrameData>>>[],
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const det = await detectOnce(video);
+    if (det) {
+      const data = await captureFrameData(video, det);
+      if (data) {
+        collectFrames?.push(data);
+        if (checkFn(data)) return true;
+      }
+    }
+    await new Promise(r => setTimeout(r, pollMs));
+  }
+  return false;
+}
+
 export async function performLivenessCheck(
   video: HTMLVideoElement,
   onProgress?: (step: string, status: "checking" | "passed" | "failed") => void,
@@ -272,98 +325,48 @@ export async function performLivenessCheck(
     capturedFrames: [],
   };
 
-  const descriptors: Float32Array[] = [];
-  const eyeRatios: { left: number; right: number; frameIndex: number }[] = [];
-  const facePositions: { x: number; y: number; width: number; height: number }[] = [];
-  const headPoses: { yaw: number; pitch: number; frameIndex: number }[] = [];
-  const textureScores: number[] = [];
-  const colorAnalyses: ReturnType<typeof analyzeColorDistribution>[] = [];
-  const moireScores: number[] = [];
-  const reflectionScores: number[] = [];
-  const faceSizes: number[] = [];
+  const allFrames: NonNullable<Awaited<ReturnType<typeof captureFrameData>>>[] = [];
+  let frameCounter = 0;
 
-  const totalFrames = 16;
-  const frameDelay = 500;
+  const captureThumb = (canvas: HTMLCanvasElement) => {
+    const url = captureFrameAsDataURL(canvas);
+    result.capturedFrames?.push(url);
+    onFrameCapture?.(url, frameCounter++);
+  };
 
-  const PHASE_STRAIGHT = { start: 0, end: 3 };
-  const PHASE_TURN_RIGHT = { start: 4, end: 7 };
-  const PHASE_TURN_LEFT = { start: 8, end: 11 };
-  const PHASE_BLINK = { start: 12, end: 15 };
-
+  // ── STEP 1: Detect face (look straight) ──
+  onProgress?.("faceDetected", "checking");
   onInstruction?.("Look straight at the camera");
 
-  for (let i = 0; i < totalFrames; i++) {
-    if (i === PHASE_TURN_RIGHT.start) {
-      onInstruction?.("Slowly turn your head to the RIGHT →");
-      await new Promise(r => setTimeout(r, 1500));
-    } else if (i === PHASE_TURN_LEFT.start) {
-      onInstruction?.("Now slowly turn your head to the LEFT ←");
-      await new Promise(r => setTimeout(r, 1500));
-    } else if (i === PHASE_BLINK.start) {
-      onInstruction?.("Now blink your eyes 2-3 times");
-      await new Promise(r => setTimeout(r, 1200));
-    } else if (i > 0) {
-      await new Promise(r => setTimeout(r, frameDelay));
-    }
+  let baselineYaw = 0;
+  let straightFrames: typeof allFrames = [];
 
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) continue;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const faceFound = await waitForCondition(
+    video,
+    (data) => {
+      straightFrames.push(data);
+      return straightFrames.length >= 3;
+    },
+    8000, 400, allFrames
+  );
 
-    if (i === 0) {
-      onProgress?.("faceDetected", "checking");
-    }
-
-    const detection = await faceapi
-      .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
-      .withFaceLandmarks(true)
-      .withFaceDescriptor();
-
-    if (!detection) continue;
-
-    descriptors.push(detection.descriptor);
-    const eyes = analyzeEyeOpenness(detection.landmarks);
-    eyeRatios.push({ left: eyes.leftOpen, right: eyes.rightOpen, frameIndex: i });
-    const box = detection.detection.box;
-    facePositions.push({ x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width, height: box.height });
-    faceSizes.push(box.width * box.height);
-
-    const pose = getHeadPose(detection.landmarks);
-    headPoses.push({ ...pose, frameIndex: i });
-
-    const faceBox = { x: box.x, y: box.y, width: box.width, height: box.height };
-    textureScores.push(analyzeTextureVariance(canvas, faceBox));
-    colorAnalyses.push(analyzeColorDistribution(canvas, faceBox));
-    moireScores.push(detectScreenMoire(canvas, faceBox));
-    reflectionScores.push(detectReflectionPatterns(canvas, faceBox));
-
-    if (i % 4 === 0) {
-      const frameUrl = captureFrameAsDataURL(canvas);
-      result.capturedFrames?.push(frameUrl);
-      onFrameCapture?.(frameUrl, i);
-    }
-  }
-
-  if (descriptors.length < 6) {
-    result.message = "Could not detect face consistently. Please ensure your face is clearly visible and well-lit.";
+  if (!faceFound || straightFrames.length < 3) {
+    result.message = "Could not detect your face. Please ensure your face is clearly visible and well-lit.";
     onProgress?.("faceDetected", "failed");
     return result;
   }
 
+  baselineYaw = straightFrames.reduce((a, b) => a + b.pose.yaw, 0) / straightFrames.length;
   result.checks.faceDetected = true;
   onProgress?.("faceDetected", "passed");
+  captureThumb(straightFrames[0].canvas);
 
+  // ── STEP 2: Texture analysis (runs on collected frames) ──
   onProgress?.("textureAnalysis", "checking");
-  await new Promise(r => setTimeout(r, 200));
-  const avgTexture = textureScores.reduce((a, b) => a + b, 0) / textureScores.length;
-  const textureVarianceAcrossFrames = calculateVariance(textureScores);
-
-  const screenLikeTexture = avgTexture < 400 || textureVarianceAcrossFrames < 10;
-
-  if (screenLikeTexture) {
+  await new Promise(r => setTimeout(r, 300));
+  const textures = straightFrames.map(f => f.texture);
+  const avgTexture = textures.reduce((a, b) => a + b, 0) / textures.length;
+  if (avgTexture < 400) {
     result.checks.textureAnalysis = false;
     onProgress?.("textureAnalysis", "failed");
     result.message = "Flat texture detected - this appears to be a photo or screen, not a real face.";
@@ -372,15 +375,15 @@ export async function performLivenessCheck(
   result.checks.textureAnalysis = true;
   onProgress?.("textureAnalysis", "passed");
 
+  // ── STEP 3: Screen detection (runs on collected frames) ──
   onProgress?.("screenDetection", "checking");
-  await new Promise(r => setTimeout(r, 200));
-
-  const avgMoire = moireScores.reduce((a, b) => a + b, 0) / moireScores.length;
-  const avgReflection = reflectionScores.reduce((a, b) => a + b, 0) / reflectionScores.length;
-  const avgBlueRatio = colorAnalyses.reduce((a, b) => a + b.blueRatio, 0) / colorAnalyses.length;
-  const avgSatVariance = colorAnalyses.reduce((a, b) => a + b.saturationVariance, 0) / colorAnalyses.length;
-  const avgColorVariance = colorAnalyses.reduce((a, b) => a + b.colorVariance, 0) / colorAnalyses.length;
-  const avgBrightnessUniformity = colorAnalyses.reduce((a, b) => a + b.brightnessUniformity, 0) / colorAnalyses.length;
+  await new Promise(r => setTimeout(r, 300));
+  const avgMoire = straightFrames.reduce((a, b) => a + b.moire, 0) / straightFrames.length;
+  const avgReflection = straightFrames.reduce((a, b) => a + b.reflection, 0) / straightFrames.length;
+  const avgBlueRatio = straightFrames.reduce((a, b) => a + b.color.blueRatio, 0) / straightFrames.length;
+  const avgSatVariance = straightFrames.reduce((a, b) => a + b.color.saturationVariance, 0) / straightFrames.length;
+  const avgColorVariance = straightFrames.reduce((a, b) => a + b.color.colorVariance, 0) / straightFrames.length;
+  const avgBrightnessUniformity = straightFrames.reduce((a, b) => a + b.color.brightnessUniformity, 0) / straightFrames.length;
 
   let screenScore = 0;
   if (avgMoire > 0.15) screenScore += 2;
@@ -389,11 +392,6 @@ export async function performLivenessCheck(
   if (avgSatVariance < 0.005) screenScore += 1;
   if (avgColorVariance < 300) screenScore += 1;
   if (avgBrightnessUniformity < 500) screenScore += 1;
-
-  const sizeVariance = calculateVariance(faceSizes);
-  const avgFaceSize = faceSizes.reduce((a, b) => a + b, 0) / faceSizes.length;
-  const normalizedSizeVariance = sizeVariance / ((avgFaceSize * avgFaceSize) + 1);
-  if (normalizedSizeVariance < 0.0001) screenScore += 1;
 
   if (screenScore >= 4) {
     result.checks.screenDetection = false;
@@ -404,113 +402,160 @@ export async function performLivenessCheck(
   result.checks.screenDetection = true;
   onProgress?.("screenDetection", "passed");
 
+  // ── STEP 4: Eye openness check ──
   onProgress?.("eyeOpenness", "checking");
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 300));
   let eyesOpenCount = 0;
-  for (const ratio of eyeRatios) {
-    if (ratio.left > 0.18 && ratio.right > 0.18) {
-      eyesOpenCount++;
-    }
+  for (const f of straightFrames) {
+    if (f.eyes.leftOpen > 0.18 && f.eyes.rightOpen > 0.18) eyesOpenCount++;
   }
-  result.checks.eyeOpenness = eyesOpenCount >= Math.floor(eyeRatios.length * 0.6);
+  result.checks.eyeOpenness = eyesOpenCount >= Math.floor(straightFrames.length * 0.5);
   onProgress?.("eyeOpenness", result.checks.eyeOpenness ? "passed" : "failed");
-
   if (!result.checks.eyeOpenness) {
     result.message = "Eyes not detected properly. Please keep your eyes open and look at the camera.";
     return result;
   }
 
-  onProgress?.("blinkDetected", "checking");
-  await new Promise(r => setTimeout(r, 200));
+  // ── STEP 5: Turn head RIGHT (wait until detected) ──
+  onProgress?.("headMovement", "checking");
+  onInstruction?.("👉 Slowly turn your head to the RIGHT");
 
-  const earValues = eyeRatios.map(r => (r.left + r.right) / 2);
-  let blinkTransitions = 0;
-  const blinkThresholdLow = 0.17;
-  const blinkThresholdHigh = 0.22;
-  let wasOpen = earValues[0] > blinkThresholdHigh;
+  let rightDetected = false;
+  let rightFrames: typeof allFrames = [];
 
-  for (let i = 1; i < earValues.length; i++) {
-    const isOpen = earValues[i] > blinkThresholdHigh;
-    const isClosed = earValues[i] < blinkThresholdLow;
-    if (wasOpen && isClosed) {
-      blinkTransitions++;
-    }
-    if (isOpen) wasOpen = true;
-    if (isClosed) wasOpen = false;
+  rightDetected = await waitForCondition(
+    video,
+    (data) => {
+      const yawDelta = data.pose.yaw - baselineYaw;
+      return Math.abs(yawDelta) > 0.025;
+    },
+    8000, 300, rightFrames
+  );
+
+  if (rightDetected && rightFrames.length > 0) {
+    allFrames.push(...rightFrames);
+    captureThumb(rightFrames[rightFrames.length - 1].canvas);
+    onInstruction?.("✅ Right turn detected!");
+    await new Promise(r => setTimeout(r, 600));
   }
 
-  const earVariance = calculateVariance(earValues);
-  result.checks.blinkDetected = blinkTransitions >= 1 || earVariance > 0.001;
-  onProgress?.("blinkDetected", result.checks.blinkDetected ? "passed" : "failed");
+  // ── STEP 6: Turn head LEFT (wait until detected) ──
+  onInstruction?.("👈 Now slowly turn your head to the LEFT");
 
+  let leftDetected = false;
+  let leftFrames: typeof allFrames = [];
+  const rightYaw = rightFrames.length > 0
+    ? rightFrames[rightFrames.length - 1].pose.yaw
+    : baselineYaw;
+
+  leftDetected = await waitForCondition(
+    video,
+    (data) => {
+      const yawDelta = data.pose.yaw - baselineYaw;
+      const oppositeFromRight = (rightYaw - baselineYaw > 0 && yawDelta < -0.02) ||
+                                 (rightYaw - baselineYaw < 0 && yawDelta > 0.02) ||
+                                 Math.abs(yawDelta) > 0.025;
+      return oppositeFromRight;
+    },
+    8000, 300, leftFrames
+  );
+
+  if (leftDetected && leftFrames.length > 0) {
+    allFrames.push(...leftFrames);
+    captureThumb(leftFrames[leftFrames.length - 1].canvas);
+    onInstruction?.("✅ Left turn detected!");
+    await new Promise(r => setTimeout(r, 600));
+  }
+
+  result.checks.headMovement = rightDetected && leftDetected;
+  onProgress?.("headMovement", result.checks.headMovement ? "passed" : "failed");
+
+  if (!result.checks.headMovement) {
+    result.message = "Head movement not detected. Please turn your head right and then left when prompted.";
+    return result;
+  }
+
+  // ── STEP 7: Blink detection (wait until detected) ──
+  onProgress?.("blinkDetected", "checking");
+  onInstruction?.("😑 Now blink your eyes 2-3 times");
+
+  let blinkDetected = false;
+  let blinkFrames: typeof allFrames = [];
+  let lastEar = 999;
+  let blinkCount = 0;
+  let eyeWasOpen = true;
+
+  blinkDetected = await waitForCondition(
+    video,
+    (data) => {
+      const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
+      const isOpen = ear > 0.21;
+      const isClosed = ear < 0.17;
+
+      if (eyeWasOpen && isClosed) {
+        blinkCount++;
+      }
+      if (isOpen) eyeWasOpen = true;
+      if (isClosed) eyeWasOpen = false;
+
+      lastEar = ear;
+      return blinkCount >= 1;
+    },
+    8000, 200, blinkFrames
+  );
+
+  if (blinkFrames.length > 0) {
+    allFrames.push(...blinkFrames);
+    captureThumb(blinkFrames[blinkFrames.length - 1].canvas);
+  }
+
+  result.checks.blinkDetected = blinkDetected;
+  onProgress?.("blinkDetected", blinkDetected ? "passed" : "failed");
+  if (blinkDetected) {
+    onInstruction?.("✅ Blink detected!");
+    await new Promise(r => setTimeout(r, 600));
+  }
+
+  // ── STEP 8: Motion check (from all collected frames) ──
   onProgress?.("motionDetected", "checking");
-  await new Promise(r => setTimeout(r, 200));
-  if (facePositions.length >= 5) {
+  await new Promise(r => setTimeout(r, 300));
+  const positions = allFrames.map(f => f.position);
+  if (positions.length >= 3) {
     let totalMotion = 0;
-    for (let i = 1; i < facePositions.length; i++) {
-      const dx = facePositions[i].x - facePositions[i - 1].x;
-      const dy = facePositions[i].y - facePositions[i - 1].y;
+    for (let i = 1; i < positions.length; i++) {
+      const dx = positions[i].x - positions[i - 1].x;
+      const dy = positions[i].y - positions[i - 1].y;
       totalMotion += Math.sqrt(dx * dx + dy * dy);
     }
-    const avgMotion = totalMotion / (facePositions.length - 1);
-    result.checks.motionDetected = avgMotion > 1.5;
+    const avgMotion = totalMotion / (positions.length - 1);
+    result.checks.motionDetected = avgMotion > 1.0;
   }
   onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
 
-  onProgress?.("headMovement", "checking");
-  await new Promise(r => setTimeout(r, 200));
-
-  const straightPoses = headPoses.filter(p => p.frameIndex >= PHASE_STRAIGHT.start && p.frameIndex <= PHASE_STRAIGHT.end);
-  const rightPoses = headPoses.filter(p => p.frameIndex >= PHASE_TURN_RIGHT.start && p.frameIndex <= PHASE_TURN_RIGHT.end);
-  const leftPoses = headPoses.filter(p => p.frameIndex >= PHASE_TURN_LEFT.start && p.frameIndex <= PHASE_TURN_LEFT.end);
-
-  let headMovementDetected = false;
-
-  if (straightPoses.length > 0 && rightPoses.length > 0 && leftPoses.length > 0) {
-    const straightAvgYaw = straightPoses.reduce((a, b) => a + b.yaw, 0) / straightPoses.length;
-    const rightAvgYaw = rightPoses.reduce((a, b) => a + b.yaw, 0) / rightPoses.length;
-    const leftAvgYaw = leftPoses.reduce((a, b) => a + b.yaw, 0) / leftPoses.length;
-
-    const rightDelta = rightAvgYaw - straightAvgYaw;
-    const leftDelta = leftAvgYaw - straightAvgYaw;
-
-    const hasRightTurn = Math.abs(rightDelta) > 0.03;
-    const hasLeftTurn = Math.abs(leftDelta) > 0.03;
-    const directionsDiffer = (rightDelta > 0 && leftDelta < 0) || (rightDelta < 0 && leftDelta > 0);
-
-    headMovementDetected = (hasRightTurn && hasLeftTurn && directionsDiffer);
-  }
-
-  if (!headMovementDetected && headPoses.length >= 5) {
-    const yaws = headPoses.map(p => p.yaw);
-    const yawRange = Math.max(...yaws) - Math.min(...yaws);
-    headMovementDetected = yawRange > 0.1;
-  }
-
-  result.checks.headMovement = headMovementDetected;
-  onProgress?.("headMovement", result.checks.headMovement ? "passed" : "failed");
-
+  // ── STEP 9: Identity consistency ──
   onProgress?.("consistentDescriptor", "checking");
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 300));
+  const descriptors = allFrames.map(f => f.descriptor);
   if (descriptors.length >= 3) {
     let consistentPairs = 0;
     let totalPairs = 0;
     for (let i = 0; i < descriptors.length; i++) {
       for (let j = i + 1; j < descriptors.length; j++) {
         const dist = euclideanDistanceFloat(descriptors[i], descriptors[j]);
-        if (dist < 0.45) consistentPairs++;
+        if (dist < 0.5) consistentPairs++;
         totalPairs++;
       }
     }
-    result.checks.consistentDescriptor = totalPairs > 0 && (consistentPairs / totalPairs) > 0.7;
+    result.checks.consistentDescriptor = totalPairs > 0 && (consistentPairs / totalPairs) > 0.6;
   }
   onProgress?.("consistentDescriptor", result.checks.consistentDescriptor ? "passed" : "failed");
 
   if (!result.checks.consistentDescriptor) {
-    result.message = "Face identity is not consistent across frames. Please keep still and try again.";
+    result.message = "Face identity is not consistent. Please keep your face visible throughout and try again.";
     return result;
   }
 
+  // ── Final gating ──
   const criticalChecks = [
     result.checks.faceDetected,
     result.checks.textureAnalysis,
@@ -531,15 +576,16 @@ export async function performLivenessCheck(
   result.isLive = criticalPassed && softPassed;
 
   if (result.isLive) {
+    onInstruction?.("✅ All checks passed! Face verified.");
     result.message = "Liveness verified. Real face confirmed.";
   } else {
     const failed = [];
     if (!result.checks.screenDetection) failed.push("screen/photo detected");
     if (!result.checks.textureAnalysis) failed.push("flat texture");
-    if (!result.checks.headMovement) failed.push("head movement not detected - turn your head left and right");
+    if (!result.checks.headMovement) failed.push("head movement not detected");
     if (!result.checks.blinkDetected && !result.checks.motionDetected) failed.push("no blink or motion detected");
     if (!result.checks.eyeOpenness) failed.push("eyes not properly detected");
-    result.message = failed.length > 0 
+    result.message = failed.length > 0
       ? `Liveness check failed: ${failed.join(". ")}. Please use your real face and follow instructions.`
       : "Liveness check failed. Please try again with your real face.";
   }
