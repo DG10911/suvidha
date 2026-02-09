@@ -2,18 +2,28 @@ import KioskLayout from "@/components/layout/KioskLayout";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ScanFace, CheckCircle2, Loader2, Camera, XCircle, AlertTriangle, Eye, Shield, Fingerprint, Activity } from "lucide-react";
+import { ScanFace, CheckCircle2, Loader2, Camera, XCircle, AlertTriangle, Eye, Shield, Fingerprint, Activity, MonitorSmartphone, Move } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { savePreferences, loadPreferences } from "@/lib/userPreferences";
 import { t } from "@/lib/translations";
-import { loadFaceModels, performLivenessCheck, descriptorToArray, detectFaceDescriptorMultiFrame, type LivenessResult } from "@/lib/faceUtils";
+import { loadFaceModels, performLivenessCheck, descriptorToArray, detectFaceDescriptorMultiFrame, initLivenessSteps } from "@/lib/faceUtils";
 
 interface LivenessStep {
   key: string;
   label: string;
-  icon: React.ReactNode;
   status: "pending" | "checking" | "passed" | "failed";
 }
+
+const stepIcons: Record<string, React.ReactNode> = {
+  faceDetected: <ScanFace className="w-5 h-5" />,
+  textureAnalysis: <Shield className="w-5 h-5" />,
+  screenDetection: <MonitorSmartphone className="w-5 h-5" />,
+  eyeOpenness: <Eye className="w-5 h-5" />,
+  blinkDetected: <Activity className="w-5 h-5" />,
+  motionDetected: <Fingerprint className="w-5 h-5" />,
+  headMovement: <Move className="w-5 h-5" />,
+  consistentDescriptor: <CheckCircle2 className="w-5 h-5" />,
+};
 
 export default function FaceLogin() {
   const [, setLocation] = useLocation();
@@ -28,6 +38,8 @@ export default function FaceLogin() {
   const [modelsReady, setModelsReady] = useState(false);
   const [livenessSteps, setLivenessSteps] = useState<LivenessStep[]>([]);
   const [scanProgress, setScanProgress] = useState(0);
+  const [instruction, setInstruction] = useState("");
+  const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -77,15 +89,6 @@ export default function FaceLogin() {
     };
   }, [step, modelsReady, startCamera, stopCamera]);
 
-  const initLivenessSteps = (): LivenessStep[] => [
-    { key: "faceDetected", label: "Face Detection", icon: <ScanFace className="w-5 h-5" />, status: "pending" },
-    { key: "textureAnalysis", label: "Texture & Anti-Spoof", icon: <Shield className="w-5 h-5" />, status: "pending" },
-    { key: "eyeOpenness", label: "Eye & Retina Scan", icon: <Eye className="w-5 h-5" />, status: "pending" },
-    { key: "blinkDetected", label: "Blink Detection", icon: <Activity className="w-5 h-5" />, status: "pending" },
-    { key: "motionDetected", label: "Motion Analysis", icon: <Fingerprint className="w-5 h-5" />, status: "pending" },
-    { key: "consistentDescriptor", label: "Identity Consistency", icon: <CheckCircle2 className="w-5 h-5" />, status: "pending" },
-  ];
-
   const attemptFaceLogin = async () => {
     if (!videoRef.current) return;
 
@@ -102,19 +105,30 @@ export default function FaceLogin() {
     }
 
     setStep("liveness");
-    const steps = initLivenessSteps();
+    const steps = initLivenessSteps().map(s => ({ ...s, status: "pending" as const }));
     setLivenessSteps(steps);
     setScanProgress(0);
+    setCapturedFrames([]);
+    setInstruction("Look straight at the camera");
 
-    const livenessResult = await performLivenessCheck(video, (stepKey, status) => {
-      setLivenessSteps(prev => prev.map(s =>
-        s.key === stepKey ? { ...s, status } : s
-      ));
-      const stepIndex = steps.findIndex(s => s.key === stepKey);
-      if (stepIndex >= 0) {
-        setScanProgress(Math.round(((stepIndex + 1) / steps.length) * 100));
+    const livenessResult = await performLivenessCheck(
+      video,
+      (stepKey, status) => {
+        setLivenessSteps(prev => prev.map(s =>
+          s.key === stepKey ? { ...s, status } : s
+        ));
+        const stepIndex = steps.findIndex(s => s.key === stepKey);
+        if (stepIndex >= 0) {
+          setScanProgress(Math.round(((stepIndex + 1) / steps.length) * 100));
+        }
+      },
+      (instr) => {
+        setInstruction(instr);
+      },
+      (frameUrl) => {
+        setCapturedFrames(prev => [...prev, frameUrl]);
       }
-    });
+    );
 
     if (!livenessResult.isLive) {
       setErrorMsg(livenessResult.message);
@@ -123,9 +137,10 @@ export default function FaceLogin() {
     }
 
     setStep("processing");
+    setInstruction("");
 
     try {
-      const descriptor = await detectFaceDescriptorMultiFrame(video, 3, 300);
+      const descriptor = await detectFaceDescriptorMultiFrame(video, 5, 250);
 
       if (!descriptor) {
         setErrorMsg("No face detected in the camera. Please make sure your face is clearly visible and well-lit.");
@@ -163,7 +178,7 @@ export default function FaceLogin() {
 
   return (
     <KioskLayout>
-      <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto w-full">
+      <div className="h-full flex flex-col items-center justify-center max-w-3xl mx-auto w-full">
         <AnimatePresence mode="wait">
           {step === "loading" && (
             <motion.div
@@ -195,9 +210,16 @@ export default function FaceLogin() {
                 </div>
                 <h2 className="text-4xl font-bold font-heading mb-2">{t("face_login_title", lang)}</h2>
                 <p className="text-xl text-muted-foreground">{t("look_camera_login", lang)}</p>
-                <div className="flex items-center justify-center gap-2 mt-3 text-sm text-blue-600 font-medium">
-                  <Shield className="w-4 h-4" />
-                  <span>Anti-spoof &amp; liveness verification enabled</span>
+                <div className="flex items-center justify-center gap-4 mt-3">
+                  <div className="flex items-center gap-1 text-xs text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-full">
+                    <Shield className="w-3 h-3" /> Anti-Spoof
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-green-600 font-bold bg-green-50 px-3 py-1 rounded-full">
+                    <Eye className="w-3 h-3" /> Retina Scan
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-purple-600 font-bold bg-purple-50 px-3 py-1 rounded-full">
+                    <MonitorSmartphone className="w-3 h-3" /> Screen Detect
+                  </div>
                 </div>
               </div>
 
@@ -229,6 +251,9 @@ export default function FaceLogin() {
                     <div className="bg-blue-500/80 text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
                       <Shield className="w-3 h-3" /> LIVE
                     </div>
+                    <div className="bg-purple-500/80 text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
+                      <MonitorSmartphone className="w-3 h-3" /> SCREEN
+                    </div>
                   </div>
                 </div>
 
@@ -250,36 +275,59 @@ export default function FaceLogin() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full space-y-6"
+              className="w-full space-y-5"
             >
               <div className="text-center">
-                <h3 className="text-3xl font-bold font-heading mb-2">Verifying Real Face</h3>
-                <p className="text-lg text-muted-foreground">Running security checks...</p>
+                <h3 className="text-3xl font-bold font-heading mb-1">Verifying Real Face</h3>
+                <p className="text-lg text-muted-foreground">Running 8-layer security verification...</p>
               </div>
 
-              <div className="flex gap-6 items-start">
-                <div className="relative w-48 h-48 rounded-2xl overflow-hidden bg-black border-4 border-blue-300 flex-shrink-0">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 border-4 border-blue-400/50 rounded-2xl pointer-events-none">
-                    <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
-                    <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
-                    <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
-                    <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
+              <div className="flex gap-5 items-start">
+                <div className="flex flex-col items-center gap-3 flex-shrink-0">
+                  <div className="relative w-52 h-52 rounded-2xl overflow-hidden bg-black border-4 border-blue-300">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 border-4 border-blue-400/50 rounded-2xl pointer-events-none">
+                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
+                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
+                    </div>
+                    <div className="absolute bottom-0 inset-x-0 h-0.5 bg-green-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
                   </div>
-                  <div className="absolute bottom-0 inset-x-0 h-0.5 bg-green-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
+
+                  {instruction && (
+                    <motion.div
+                      key={instruction}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold text-center max-w-[220px]"
+                    >
+                      {instruction}
+                    </motion.div>
+                  )}
+
+                  {capturedFrames.length > 0 && (
+                    <div className="flex gap-1.5">
+                      {capturedFrames.slice(-4).map((frame, idx) => (
+                        <div key={idx} className="w-11 h-11 rounded-lg overflow-hidden border-2 border-green-300">
+                          <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex-1 space-y-3">
+                <div className="flex-1 space-y-2">
                   {livenessSteps.map((s) => (
                     <div
                       key={s.key}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all duration-300 ${
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 ${
                         s.status === "passed" ? "border-green-300 bg-green-50" :
                         s.status === "failed" ? "border-red-300 bg-red-50" :
                         s.status === "checking" ? "border-blue-300 bg-blue-50 animate-pulse" :
@@ -295,7 +343,7 @@ export default function FaceLogin() {
                         {s.status === "checking" ? <Loader2 className="w-5 h-5 animate-spin" /> :
                          s.status === "passed" ? <CheckCircle2 className="w-5 h-5" /> :
                          s.status === "failed" ? <XCircle className="w-5 h-5" /> :
-                         s.icon}
+                         stepIcons[s.key] || <Shield className="w-5 h-5" />}
                       </div>
                       <span className={`text-sm font-semibold ${
                         s.status === "passed" ? "text-green-700" :
@@ -325,7 +373,7 @@ export default function FaceLogin() {
                 />
               </div>
               <p className="text-center text-sm text-muted-foreground">
-                Keep your face still and look directly at the camera
+                Follow the instructions above for best results
               </p>
             </motion.div>
           )}
@@ -353,7 +401,7 @@ export default function FaceLogin() {
               <div className="text-center">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <CheckCircle2 className="w-5 h-5 text-green-600" />
-                  <span className="text-green-600 font-bold">Liveness Verified</span>
+                  <span className="text-green-600 font-bold">All 8 Checks Passed</span>
                 </div>
                 <h3 className="text-3xl font-bold font-heading">{t("identifying", lang)}</h3>
                 <p className="text-xl text-muted-foreground">{t("matching_face", lang)}</p>
@@ -385,20 +433,30 @@ export default function FaceLogin() {
 
               <div className="bg-white p-8 rounded-3xl shadow-lg border-4 border-green-200 max-w-md mx-auto">
                 <div className="flex items-center gap-4 mb-4">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                    <ScanFace className="w-8 h-8 text-green-600" />
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center overflow-hidden">
+                    {faceCapture ? (
+                      <img src={faceCapture} alt="Face" className="w-full h-full object-cover" />
+                    ) : (
+                      <ScanFace className="w-8 h-8 text-green-600" />
+                    )}
                   </div>
                   <div>
                     <p className="text-lg font-bold">{t("face_verified", lang)}</p>
                     <p className="text-muted-foreground">{t("settings_auto_restored", lang)}</p>
                   </div>
                 </div>
-                <div className="flex gap-2 mb-3">
+                <div className="flex flex-wrap gap-2 mb-3">
                   <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                    <Shield className="w-3 h-3" /> Anti-Spoof Verified
+                    <Shield className="w-3 h-3" /> Anti-Spoof
                   </div>
                   <div className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                    <Eye className="w-3 h-3" /> Retina Scanned
+                    <Eye className="w-3 h-3" /> Retina
+                  </div>
+                  <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                    <MonitorSmartphone className="w-3 h-3" /> Screen Check
+                  </div>
+                  <div className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                    <Move className="w-3 h-3" /> Head Movement
                   </div>
                 </div>
                 <div className="w-full bg-green-100 rounded-full h-2 overflow-hidden">
@@ -432,18 +490,32 @@ export default function FaceLogin() {
               <div className="bg-red-50 border-2 border-red-200 rounded-3xl p-6 max-w-md mx-auto space-y-4">
                 <h4 className="font-bold text-red-700 text-lg">Security Alert</h4>
                 <ul className="space-y-2 text-red-600">
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Photos and printouts are not allowed</li>
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Screen displays are not allowed</li>
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Masks and face covers are not allowed</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Photos and printouts are blocked</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Phone/tablet screens are blocked</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Masks and face covers are blocked</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Head movement & blink required</li>
                 </ul>
-                <p className="text-sm text-muted-foreground">Please use your real face for verification.</p>
+                <p className="text-sm text-muted-foreground">Please use your real face and follow the on-screen instructions.</p>
               </div>
+
+              {capturedFrames.length > 0 && (
+                <div className="max-w-md mx-auto">
+                  <p className="text-sm font-bold text-gray-500 mb-2">Captured analysis frames:</p>
+                  <div className="flex gap-2">
+                    {capturedFrames.map((frame, idx) => (
+                      <div key={idx} className="w-16 h-16 rounded-lg overflow-hidden border-2 border-red-300">
+                        <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-col gap-4 max-w-md mx-auto">
                 <Button
                   size="lg"
                   className="h-16 text-xl rounded-2xl gap-3 bg-blue-600 hover:bg-blue-700"
-                  onClick={() => { setStep("scanning"); setErrorMsg(""); setScanProgress(0); }}
+                  onClick={() => { setStep("scanning"); setErrorMsg(""); setScanProgress(0); setCapturedFrames([]); }}
                 >
                   <ScanFace className="w-6 h-6" />
                   {t("try_again", lang)}
@@ -515,7 +587,7 @@ export default function FaceLogin() {
                 <Button
                   size="lg"
                   className="h-16 text-xl rounded-2xl gap-3 bg-blue-600 hover:bg-blue-700"
-                  onClick={() => { setStep("scanning"); setErrorMsg(""); }}
+                  onClick={() => { setStep("scanning"); setErrorMsg(""); setCapturedFrames([]); }}
                 >
                   <ScanFace className="w-6 h-6" />
                   {t("try_again", lang)}
@@ -527,14 +599,6 @@ export default function FaceLogin() {
                   onClick={() => setLocation("/login/mobile")}
                 >
                   {t("login_mobile", lang)}
-                </Button>
-                <Button
-                  size="lg"
-                  variant="ghost"
-                  className="h-16 text-xl rounded-2xl"
-                  onClick={() => setLocation("/signup")}
-                >
-                  {t("signup_first", lang)}
                 </Button>
               </div>
             </motion.div>

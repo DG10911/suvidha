@@ -3,19 +3,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { CheckCircle2, ArrowRight, UserPlus, Fingerprint, Loader2, Camera, ScanFace, AlertTriangle, Shield, Eye, Activity, XCircle } from "lucide-react";
+import { CheckCircle2, ArrowRight, UserPlus, Fingerprint, Loader2, Camera, ScanFace, AlertTriangle, Shield, Eye, Activity, XCircle, MonitorSmartphone, Move } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { savePreferences, loadPreferences } from "@/lib/userPreferences";
 import { t } from "@/lib/translations";
 import QRCode from "qrcode";
-import { loadFaceModels, performLivenessCheck, detectFaceDescriptorMultiFrame, descriptorToArray, type LivenessResult } from "@/lib/faceUtils";
+import { loadFaceModels, performLivenessCheck, detectFaceDescriptorMultiFrame, descriptorToArray, initLivenessSteps } from "@/lib/faceUtils";
 
 interface LivenessStep {
   key: string;
   label: string;
-  icon: React.ReactNode;
   status: "pending" | "checking" | "passed" | "failed";
 }
+
+const stepIcons: Record<string, React.ReactNode> = {
+  faceDetected: <ScanFace className="w-5 h-5" />,
+  textureAnalysis: <Shield className="w-5 h-5" />,
+  screenDetection: <MonitorSmartphone className="w-5 h-5" />,
+  eyeOpenness: <Eye className="w-5 h-5" />,
+  blinkDetected: <Activity className="w-5 h-5" />,
+  motionDetected: <Fingerprint className="w-5 h-5" />,
+  headMovement: <Move className="w-5 h-5" />,
+  consistentDescriptor: <CheckCircle2 className="w-5 h-5" />,
+};
 
 export default function Signup() {
   const [, setLocation] = useLocation();
@@ -34,6 +44,8 @@ export default function Signup() {
   const [lang, setLang] = useState(() => loadPreferences().language);
   const [livenessSteps, setLivenessSteps] = useState<LivenessStep[]>([]);
   const [scanProgress, setScanProgress] = useState(0);
+  const [instruction, setInstruction] = useState("");
+  const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -180,15 +192,6 @@ export default function Signup() {
     }
   };
 
-  const initLivenessSteps = (): LivenessStep[] => [
-    { key: "faceDetected", label: "Face Detection", icon: <ScanFace className="w-5 h-5" />, status: "pending" },
-    { key: "textureAnalysis", label: "Texture & Anti-Spoof", icon: <Shield className="w-5 h-5" />, status: "pending" },
-    { key: "eyeOpenness", label: "Eye & Retina Scan", icon: <Eye className="w-5 h-5" />, status: "pending" },
-    { key: "blinkDetected", label: "Blink Detection", icon: <Activity className="w-5 h-5" />, status: "pending" },
-    { key: "motionDetected", label: "Motion Analysis", icon: <Fingerprint className="w-5 h-5" />, status: "pending" },
-    { key: "consistentDescriptor", label: "Identity Consistency", icon: <CheckCircle2 className="w-5 h-5" />, status: "pending" },
-  ];
-
   const captureFace = async () => {
     let imageData: string | null = null;
     setFaceError(null);
@@ -206,19 +209,30 @@ export default function Signup() {
       }
 
       setStep("liveness");
-      const steps = initLivenessSteps();
+      const steps = initLivenessSteps().map(s => ({ ...s, status: "pending" as const }));
       setLivenessSteps(steps);
       setScanProgress(0);
+      setCapturedFrames([]);
+      setInstruction("Look straight at the camera");
 
-      const livenessResult = await performLivenessCheck(video, (stepKey, status) => {
-        setLivenessSteps(prev => prev.map(s =>
-          s.key === stepKey ? { ...s, status } : s
-        ));
-        const stepIndex = steps.findIndex(s => s.key === stepKey);
-        if (stepIndex >= 0) {
-          setScanProgress(Math.round(((stepIndex + 1) / steps.length) * 100));
+      const livenessResult = await performLivenessCheck(
+        video,
+        (stepKey, status) => {
+          setLivenessSteps(prev => prev.map(s =>
+            s.key === stepKey ? { ...s, status } : s
+          ));
+          const stepIndex = steps.findIndex(s => s.key === stepKey);
+          if (stepIndex >= 0) {
+            setScanProgress(Math.round(((stepIndex + 1) / steps.length) * 100));
+          }
+        },
+        (instr) => {
+          setInstruction(instr);
+        },
+        (frameUrl) => {
+          setCapturedFrames(prev => [...prev, frameUrl]);
         }
-      });
+      );
 
       if (!livenessResult.isLive) {
         setFaceError(livenessResult.message);
@@ -226,7 +240,7 @@ export default function Signup() {
         return;
       }
 
-      const descriptor = await detectFaceDescriptorMultiFrame(video, 3, 300);
+      const descriptor = await detectFaceDescriptorMultiFrame(video, 5, 250);
       if (!descriptor) {
         setFaceError("No face detected. Please position your face clearly in the frame and try again.");
         setStep("facescan");
@@ -285,7 +299,7 @@ export default function Signup() {
 
   return (
     <KioskLayout>
-      <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto w-full">
+      <div className="h-full flex flex-col items-center justify-center max-w-3xl mx-auto w-full">
         <AnimatePresence mode="wait">
           {step === "aadhar" && (
             <motion.div 
@@ -435,9 +449,16 @@ export default function Signup() {
                 </div>
                 <h2 className="text-4xl font-bold font-heading mb-2">{t("face_registration", lang)}</h2>
                 <p className="text-xl text-muted-foreground">{t("look_camera_register", lang)}</p>
-                <div className="flex items-center justify-center gap-2 mt-3 text-sm text-blue-600 font-medium">
-                  <Shield className="w-4 h-4" />
-                  <span>Anti-spoof &amp; liveness verification enabled</span>
+                <div className="flex items-center justify-center gap-4 mt-3">
+                  <div className="flex items-center gap-1 text-xs text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-full">
+                    <Shield className="w-3 h-3" /> Anti-Spoof
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-green-600 font-bold bg-green-50 px-3 py-1 rounded-full">
+                    <Eye className="w-3 h-3" /> Retina Scan
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-purple-600 font-bold bg-purple-50 px-3 py-1 rounded-full">
+                    <MonitorSmartphone className="w-3 h-3" /> Screen Detect
+                  </div>
                 </div>
                 {!modelsReady && (
                   <p className="text-sm text-blue-600 mt-2 flex items-center justify-center gap-2">
@@ -474,6 +495,9 @@ export default function Signup() {
                     </div>
                     <div className="bg-blue-500/80 text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
                       <Shield className="w-3 h-3" /> LIVE
+                    </div>
+                    <div className="bg-purple-500/80 text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
+                      <MonitorSmartphone className="w-3 h-3" /> SCREEN
                     </div>
                   </div>
                 </div>
@@ -514,36 +538,59 @@ export default function Signup() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full space-y-6"
+              className="w-full space-y-5"
             >
               <div className="text-center">
-                <h3 className="text-3xl font-bold font-heading mb-2">Verifying Real Face</h3>
-                <p className="text-lg text-muted-foreground">Running security checks for registration...</p>
+                <h3 className="text-3xl font-bold font-heading mb-1">Verifying Real Face</h3>
+                <p className="text-lg text-muted-foreground">Running 8-layer security verification for registration...</p>
               </div>
 
-              <div className="flex gap-6 items-start">
-                <div className="relative w-48 h-48 rounded-2xl overflow-hidden bg-black border-4 border-blue-300 flex-shrink-0">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 border-4 border-blue-400/50 rounded-2xl pointer-events-none">
-                    <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
-                    <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
-                    <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
-                    <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
+              <div className="flex gap-5 items-start">
+                <div className="flex flex-col items-center gap-3 flex-shrink-0">
+                  <div className="relative w-52 h-52 rounded-2xl overflow-hidden bg-black border-4 border-blue-300">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 border-4 border-blue-400/50 rounded-2xl pointer-events-none">
+                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
+                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
+                    </div>
+                    <div className="absolute bottom-0 inset-x-0 h-0.5 bg-green-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
                   </div>
-                  <div className="absolute bottom-0 inset-x-0 h-0.5 bg-green-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
+
+                  {instruction && (
+                    <motion.div
+                      key={instruction}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold text-center max-w-[220px]"
+                    >
+                      {instruction}
+                    </motion.div>
+                  )}
+
+                  {capturedFrames.length > 0 && (
+                    <div className="flex gap-1.5">
+                      {capturedFrames.slice(-4).map((frame, idx) => (
+                        <div key={idx} className="w-11 h-11 rounded-lg overflow-hidden border-2 border-green-300">
+                          <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex-1 space-y-3">
+                <div className="flex-1 space-y-2">
                   {livenessSteps.map((s) => (
                     <div
                       key={s.key}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all duration-300 ${
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 ${
                         s.status === "passed" ? "border-green-300 bg-green-50" :
                         s.status === "failed" ? "border-red-300 bg-red-50" :
                         s.status === "checking" ? "border-blue-300 bg-blue-50 animate-pulse" :
@@ -559,7 +606,7 @@ export default function Signup() {
                         {s.status === "checking" ? <Loader2 className="w-5 h-5 animate-spin" /> :
                          s.status === "passed" ? <CheckCircle2 className="w-5 h-5" /> :
                          s.status === "failed" ? <XCircle className="w-5 h-5" /> :
-                         s.icon}
+                         stepIcons[s.key] || <Shield className="w-5 h-5" />}
                       </div>
                       <span className={`text-sm font-semibold ${
                         s.status === "passed" ? "text-green-700" :
@@ -589,8 +636,39 @@ export default function Signup() {
                 />
               </div>
               <p className="text-center text-sm text-muted-foreground">
-                Keep your face still and look directly at the camera
+                Follow the instructions above for best results
               </p>
+            </motion.div>
+          )}
+
+          {step === "faceprocessing" && (
+            <motion.div
+              key="faceprocessing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <div className="relative">
+                <div className="w-32 h-32 rounded-full border-4 border-green-200 bg-green-50 flex items-center justify-center overflow-hidden">
+                  {faceCapture ? (
+                    <img src={faceCapture} alt="Captured" className="w-full h-full object-cover" />
+                  ) : (
+                    <UserPlus className="w-16 h-16 text-green-400" />
+                  )}
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
+                  <Shield className="w-5 h-5 text-white" />
+                </div>
+              </div>
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  <span className="text-green-600 font-bold">All 8 Checks Passed</span>
+                </div>
+                <h3 className="text-3xl font-bold font-heading">Creating Suvidha ID...</h3>
+                <p className="text-xl text-muted-foreground">Setting up your account</p>
+              </div>
             </motion.div>
           )}
 
@@ -612,24 +690,40 @@ export default function Signup() {
               <div className="bg-red-50 border-2 border-red-200 rounded-3xl p-6 max-w-md mx-auto space-y-4">
                 <h4 className="font-bold text-red-700 text-lg">Security Alert</h4>
                 <ul className="space-y-2 text-red-600">
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Photos and printouts are not allowed</li>
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Screen displays are not allowed</li>
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Only real faces can be registered</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Photos and printouts are blocked</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Phone/tablet screens are blocked</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Masks and face covers are blocked</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Head movement & blink required</li>
                 </ul>
+                <p className="text-sm text-muted-foreground">Please use your real face and follow the on-screen instructions.</p>
               </div>
+
+              {capturedFrames.length > 0 && (
+                <div className="max-w-md mx-auto">
+                  <p className="text-sm font-bold text-gray-500 mb-2">Captured analysis frames:</p>
+                  <div className="flex gap-2">
+                    {capturedFrames.map((frame, idx) => (
+                      <div key={idx} className="w-16 h-16 rounded-lg overflow-hidden border-2 border-red-300">
+                        <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-col gap-4 max-w-md mx-auto">
                 <Button
                   size="lg"
                   className="h-16 text-xl rounded-2xl gap-3 bg-blue-600 hover:bg-blue-700"
-                  onClick={() => { setStep("facescan"); setFaceError(null); setScanProgress(0); }}
+                  onClick={() => { setStep("facescan"); setFaceError(null); setScanProgress(0); setCapturedFrames([]); }}
                 >
                   <ScanFace className="w-6 h-6" />
                   {t("try_again", lang)}
                 </Button>
                 <Button
-                  variant="ghost"
-                  className="text-muted-foreground text-lg"
+                  size="lg"
+                  variant="outline"
+                  className="h-16 text-xl rounded-2xl"
                   onClick={skipFace}
                 >
                   {t("skip_face", lang)}
@@ -649,74 +743,27 @@ export default function Signup() {
                 <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600">
                   <AlertTriangle className="w-12 h-12" />
                 </div>
-                <h2 className="text-4xl font-bold font-heading text-amber-700">Duplicate Face Detected</h2>
+                <h2 className="text-4xl font-bold font-heading text-amber-700">Face Already Registered</h2>
                 <p className="text-xl text-muted-foreground mt-2">{signupError}</p>
-              </div>
-
-              <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-6 max-w-md mx-auto space-y-4">
-                <p className="text-amber-700 font-medium">This face already matches an existing account. Each person can only have one account.</p>
-                <p className="text-sm text-muted-foreground">If you already have an account, please use Face Login or Mobile Login instead.</p>
               </div>
 
               <div className="flex flex-col gap-4 max-w-md mx-auto">
                 <Button
                   size="lg"
-                  className="h-16 text-xl rounded-2xl gap-3 bg-blue-600 hover:bg-blue-700"
+                  className="h-16 text-xl rounded-2xl gap-3"
                   onClick={() => setLocation("/login/face")}
                 >
                   <ScanFace className="w-6 h-6" />
-                  Use Face Login
+                  Face Login
                 </Button>
                 <Button
                   size="lg"
                   variant="outline"
                   className="h-16 text-xl rounded-2xl"
-                  onClick={() => setLocation("/login/mobile")}
-                >
-                  Use Mobile Login
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="text-muted-foreground"
                   onClick={() => { setStep("facescan"); setSignupError(null); }}
                 >
-                  Try with different face
+                  {t("try_again", lang)}
                 </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === "faceprocessing" && (
-            <motion.div 
-              key="faceprocessing"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col items-center gap-6"
-            >
-              <div className="relative">
-                <div className="w-32 h-32 rounded-full border-4 border-blue-200 overflow-hidden bg-blue-50 flex items-center justify-center">
-                  {faceCapture && faceCapture !== "simulated" ? (
-                    <img src={faceCapture} alt="Captured face" className="w-full h-full object-cover" />
-                  ) : (
-                    <ScanFace className="w-16 h-16 text-blue-400" />
-                  )}
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-white" />
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
-                  <span className="text-green-600 font-bold text-sm">Liveness Verified</span>
-                </div>
-                <h3 className="text-3xl font-bold font-heading">{t("processing_face", lang)}</h3>
-                <p className="text-xl text-muted-foreground">{t("generating_profile", lang)}</p>
-              </div>
-              <div className="flex gap-2 mt-4">
-                <div className="w-3 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                <div className="w-3 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-                <div className="w-3 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
               </div>
             </motion.div>
           )}
@@ -724,57 +771,70 @@ export default function Signup() {
           {step === "qr" && signupResult && (
             <motion.div 
               key="qr"
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="w-full space-y-8"
             >
               <div className="text-center">
-                <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
-                  <CheckCircle2 className="w-12 h-12" />
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
+                  <CheckCircle2 className="w-10 h-10" />
                 </div>
-                <h2 className="text-4xl font-bold font-heading">{t("registration_success", lang)}</h2>
-                <p className="text-xl text-muted-foreground">
-                  {faceCapture ? t("face_registered_msg", lang) : t("qr_code_msg", lang)}
-                </p>
+                <h2 className="text-4xl font-bold font-heading mb-2">{t("registration_success", lang)}</h2>
+                <p className="text-xl text-muted-foreground">Your Suvidha ID is ready!</p>
               </div>
 
-              <div className="bg-white p-8 rounded-3xl shadow-xl border-4 border-primary/20 flex flex-col items-center gap-8 max-w-md mx-auto relative overflow-hidden">
-                <div className="absolute top-0 inset-x-0 h-2 bg-primary"></div>
-                <div className="text-center">
-                   <h3 className="text-2xl font-bold text-primary">SUVIDHA PASS</h3>
-                   <p className="text-sm font-medium text-muted-foreground">{t("citizen_id", lang)}: {signupResult.suvidhaId}</p>
+              <div className="bg-white p-8 rounded-3xl shadow-lg border border-border max-w-md mx-auto text-center space-y-6">
+                <div>
+                  <p className="text-muted-foreground text-lg">{t("citizen_id", lang)}</p>
+                  <p className="text-3xl font-bold font-mono">{signupResult.suvidhaId}</p>
                 </div>
 
                 {qrDataUrl && (
-                  <div className="p-4 bg-white border-2 border-border rounded-2xl">
-                    <img src={qrDataUrl} alt="QR Code" className="w-48 h-48" />
+                  <div className="bg-white p-4 inline-block rounded-2xl border">
+                    <img src={qrDataUrl} alt="QR Code" className="w-48 h-48 mx-auto" />
                   </div>
                 )}
 
-                {faceCapture && (
-                  <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl w-full">
-                    <ScanFace className="w-6 h-6 flex-shrink-0" />
-                    <span className="font-medium">{t("face_id_registered", lang)}</span>
-                    <div className="ml-auto flex gap-1">
-                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold">Verified</span>
-                    </div>
+                <div className="text-left bg-secondary/50 p-6 rounded-2xl space-y-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground font-bold">{t("name", lang)}</p>
+                    <p className="text-lg font-bold">{signupResult.name}</p>
                   </div>
-                )}
-
-                <div className="text-center space-y-2">
-                  <p className="font-bold text-lg">{signupResult.name}</p>
-                  <p className="text-muted-foreground">{t("scan_any_kiosk", lang)}</p>
+                  <div>
+                    <p className="text-sm text-muted-foreground font-bold">{t("aadhaar_number", lang)}</p>
+                    <p className="text-lg font-bold">XXXX XXXX {aadhar.slice(-4)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground font-bold">Face ID</p>
+                    <p className="text-lg font-bold flex items-center gap-2">
+                      {faceCapture ? (
+                        <><CheckCircle2 className="w-5 h-5 text-green-600" /> Registered</>
+                      ) : (
+                        <><AlertTriangle className="w-5 h-5 text-amber-500" /> Not Registered</>
+                      )}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex gap-4 w-full">
-                   <Button variant="outline" className="flex-1 h-14 rounded-xl" onClick={handlePrintCard}>{t("print_card", lang)}</Button>
-                   <Button className="flex-1 h-14 rounded-xl" onClick={() => setLocation("/dashboard")}>{t("go_dashboard", lang)}</Button>
+                <div className="flex flex-col gap-3">
+                  <Button 
+                    size="lg"
+                    className="w-full h-16 text-xl rounded-2xl gap-3"
+                    onClick={handlePrintCard}
+                  >
+                    Print Suvidha Pass
+                  </Button>
+                  <Button 
+                    size="lg"
+                    variant="outline"
+                    className="w-full h-16 text-xl rounded-2xl gap-3"
+                    onClick={() => setLocation("/dashboard")}
+                  >
+                    {t("go_dashboard", lang)}
+                    <ArrowRight className="w-5 h-5" />
+                  </Button>
                 </div>
               </div>
-
-              <p className="text-center text-muted-foreground">
-                {t("digital_copy_sent", lang)}
-              </p>
             </motion.div>
           )}
         </AnimatePresence>
