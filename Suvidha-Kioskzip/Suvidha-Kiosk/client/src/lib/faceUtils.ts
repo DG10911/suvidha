@@ -1,7 +1,28 @@
 import * as faceapi from "face-api.js";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 let modelsLoaded = false;
 let loadingPromise: Promise<void> | null = null;
+let mediapipeLandmarker: FaceLandmarker | null = null;
+let mediapipeReady = false;
+
+async function initMediaPipe(): Promise<void> {
+  if (mediapipeReady && mediapipeLandmarker) return;
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+  );
+  mediapipeLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU",
+    },
+    outputFaceBlendshapes: true,
+    runningMode: "VIDEO",
+    numFaces: 1,
+  });
+  mediapipeReady = true;
+  console.log("[MediaPipe] FaceLandmarker initialized");
+}
 
 export async function loadFaceModels(): Promise<void> {
   if (modelsLoaded) return;
@@ -13,6 +34,7 @@ export async function loadFaceModels(): Promise<void> {
       faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
       faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      initMediaPipe(),
     ]);
     modelsLoaded = true;
   })();
