@@ -54,9 +54,7 @@ export interface LivenessResult {
     faceDetected: boolean;
     textureAnalysis: boolean;
     screenDetection: boolean;
-    motionDetected: boolean;
     eyeOpenness: boolean;
-    blinkDetected: boolean;
     consistentDescriptor: boolean;
   };
   message: string;
@@ -388,9 +386,7 @@ export async function performLivenessCheck(
       faceDetected: false,
       textureAnalysis: false,
       screenDetection: false,
-      motionDetected: false,
       eyeOpenness: false,
-      blinkDetected: false,
       consistentDescriptor: false,
     },
     message: "",
@@ -501,32 +497,7 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Motion detection (MediaPipe nose drift or face-api fallback) ──
-  let motionFound = false;
-  const MOTION_THRESHOLD = 0.009;
-
-  onProgress?.("motionDetected", "checking");
-  onInstruction?.("Hold still… checking movement");
-  await new Promise(r => setTimeout(r, 200));
-  if (allFrames.length >= 2) {
-    for (let i = 1; i < allFrames.length; i++) {
-      const prev = allFrames[i - 1];
-      const curr = allFrames[i];
-      const jaw = curr.jawWidth + 0.001;
-      const dx = Math.abs(curr.noseTipX - prev.noseTipX) / jaw;
-      const dy = Math.abs(curr.noseTipY - prev.noseTipY) / jaw;
-      if (dx + dy > MOTION_THRESHOLD) {
-        console.log("[Liveness] Motion detected (fallback) at frame", i);
-        motionFound = true;
-        break;
-      }
-    }
-  }
-  result.checks.motionDetected = motionFound;
-  if (!motionFound) console.log("[Liveness] No significant motion detected");
-  onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
-
-  // ── STEP 7: Identity consistency ──
+  // ── STEP 5: Identity consistency ──
   onProgress?.("consistentDescriptor", "checking");
   await new Promise(r => setTimeout(r, 200));
   const descriptors = allFrames.map(f => f.descriptor);
@@ -564,10 +535,9 @@ export async function performLivenessCheck(
   ];
 
   const corePassed = coreChecks.every(c => c);
-  result.checks.blinkDetected = motionFound;
-  result.isLive = corePassed && motionFound;
+  result.isLive = corePassed;
 
-  console.log("[Liveness] Final: core=" + corePassed + ", motion=" + motionFound);
+  console.log("[Liveness] Final: core=" + corePassed);
 
   if (result.isLive) {
     onInstruction?.("All checks passed! Face verified.");
@@ -576,7 +546,6 @@ export async function performLivenessCheck(
     const failed = [];
     if (!result.checks.screenDetection) failed.push("screen/photo detected");
     if (!result.checks.textureAnalysis) failed.push("flat texture");
-    if (!motionFound) failed.push("no head movement detected — please move your head slightly");
     if (!result.checks.eyeOpenness) failed.push("eyes not properly detected");
     result.message = failed.length > 0
       ? `Liveness check failed: ${failed.join(". ")}. Please use your real face and follow instructions.`
@@ -689,7 +658,6 @@ export function initLivenessSteps() {
     { key: "textureAnalysis" as const, label: "Texture & Anti-Spoof", status: "pending" as const },
     { key: "screenDetection" as const, label: "Screen/Photo Detection", status: "pending" as const },
     { key: "eyeOpenness" as const, label: "Eye & Retina Scan", status: "pending" as const },
-    { key: "motionDetected" as const, label: "Movement Check", status: "pending" as const },
     { key: "consistentDescriptor" as const, label: "Identity Consistency", status: "pending" as const },
   ];
 }

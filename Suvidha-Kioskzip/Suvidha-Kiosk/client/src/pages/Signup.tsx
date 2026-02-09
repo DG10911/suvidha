@@ -21,7 +21,6 @@ const stepIcons: Record<string, React.ReactNode> = {
   textureAnalysis: <Shield className="w-5 h-5" />,
   screenDetection: <MonitorSmartphone className="w-5 h-5" />,
   eyeOpenness: <Eye className="w-5 h-5" />,
-  motionDetected: <Fingerprint className="w-5 h-5" />,
   consistentDescriptor: <CheckCircle2 className="w-5 h-5" />,
 };
 

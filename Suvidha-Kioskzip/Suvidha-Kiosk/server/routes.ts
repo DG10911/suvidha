@@ -59,18 +59,6 @@ export async function registerRoutes(
         return;
       }
 
-      const existing = await db.select().from(users).where(eq(users.aadhaar, aadhaar)).limit(1);
-      if (existing.length > 0) {
-        res.status(409).json({ success: false, message: "This Aadhaar is already registered. Please use login instead." });
-        return;
-      }
-
-      const existingPhone = await db.select().from(users).where(eq(users.username, phone)).limit(1);
-      if (existingPhone.length > 0) {
-        res.status(409).json({ success: false, message: "This phone number is already registered with another account. Please use login instead." });
-        return;
-      }
-
       if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
         const DUPLICATE_THRESHOLD = 0.45;
         const allProfiles = await db
@@ -98,6 +86,63 @@ export async function registerRoutes(
             }
           } catch { continue; }
         }
+      }
+
+      const existing = await db.select().from(users).where(eq(users.aadhaar, aadhaar)).limit(1);
+
+      if (existing.length > 0) {
+        const existingUser = existing[0];
+        const existingFace = await db.select().from(faceProfiles).where(eq(faceProfiles.userId, existingUser.id)).limit(1);
+
+        if (existingFace.length > 0 && existingFace[0].faceDescriptor) {
+          res.status(409).json({ success: false, message: "This Aadhaar is already registered with face data. Please use Face Login instead." });
+          return;
+        }
+
+        const faceHash = faceImage ? CryptoJS.SHA256(faceImage).toString() : "no-face";
+
+        if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
+          if (existingFace.length > 0) {
+            await db.update(faceProfiles)
+              .set({ faceDescriptor: JSON.stringify(faceDescriptor), faceHash })
+              .where(eq(faceProfiles.userId, existingUser.id));
+          } else {
+            await db.insert(faceProfiles).values({
+              userId: existingUser.id,
+              faceImage: "stored",
+              faceHash,
+              faceDescriptor: JSON.stringify(faceDescriptor),
+            });
+          }
+        }
+
+        if (phone && existingUser.phone !== phone) {
+          await db.update(users).set({ phone, username: phone }).where(eq(users.id, existingUser.id));
+        }
+
+        const existingQr = await db.select().from(qrTokens).where(eq(qrTokens.userId, existingUser.id)).limit(1);
+        const qrToken = existingQr.length > 0 ? existingQr[0].token : crypto.randomUUID();
+        if (existingQr.length === 0) {
+          await db.insert(qrTokens).values({
+            userId: existingUser.id,
+            token: qrToken,
+            payload: JSON.stringify({ suvidhaId: existingUser.suvidhaId, name: existingUser.name }),
+          });
+        }
+
+        console.log("[Signup] Updated existing user with face data:", existingUser.suvidhaId);
+        res.json({
+          success: true,
+          user: { id: existingUser.id, suvidhaId: existingUser.suvidhaId, name: existingUser.name },
+          qrToken,
+        });
+        return;
+      }
+
+      const existingPhone = await db.select().from(users).where(eq(users.username, phone)).limit(1);
+      if (existingPhone.length > 0) {
+        res.status(409).json({ success: false, message: "This phone number is already registered with another account. Please use login instead." });
+        return;
       }
 
       const suvidhaId = generateSuvidhaId();
