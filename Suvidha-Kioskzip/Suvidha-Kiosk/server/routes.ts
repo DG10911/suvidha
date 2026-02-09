@@ -65,6 +65,12 @@ export async function registerRoutes(
         return;
       }
 
+      const existingPhone = await db.select().from(users).where(eq(users.username, phone)).limit(1);
+      if (existingPhone.length > 0) {
+        res.status(409).json({ success: false, message: "This phone number is already registered with another account. Please use login instead." });
+        return;
+      }
+
       if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
         const DUPLICATE_THRESHOLD = 0.45;
         const allProfiles = await db
