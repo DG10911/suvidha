@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { CheckCircle2, ArrowRight, UserPlus, Fingerprint, Loader2, Camera, ScanFace, AlertTriangle, Shield, Eye, Activity, XCircle, MonitorSmartphone, Mic } from "lucide-react";
+import { CheckCircle2, ArrowRight, UserPlus, Fingerprint, Loader2, Camera, ScanFace, AlertTriangle, Shield, Eye, Activity, XCircle, MonitorSmartphone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { savePreferences, loadPreferences } from "@/lib/userPreferences";
 import { t } from "@/lib/translations";
@@ -23,7 +23,6 @@ const stepIcons: Record<string, React.ReactNode> = {
   eyeOpenness: <Eye className="w-5 h-5" />,
   blinkDetected: <Activity className="w-5 h-5" />,
   motionDetected: <Fingerprint className="w-5 h-5" />,
-  mouthOpen: <Mic className="w-5 h-5" />,
   consistentDescriptor: <CheckCircle2 className="w-5 h-5" />,
 };
 

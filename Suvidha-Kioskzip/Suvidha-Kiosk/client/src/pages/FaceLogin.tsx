@@ -2,7 +2,7 @@ import KioskLayout from "@/components/layout/KioskLayout";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ScanFace, CheckCircle2, Loader2, Camera, XCircle, AlertTriangle, Eye, Shield, Fingerprint, Activity, MonitorSmartphone, Mic } from "lucide-react";
+import { ScanFace, CheckCircle2, Loader2, Camera, XCircle, AlertTriangle, Eye, Shield, Fingerprint, Activity, MonitorSmartphone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { savePreferences, loadPreferences } from "@/lib/userPreferences";
 import { t } from "@/lib/translations";
@@ -21,7 +21,6 @@ const stepIcons: Record<string, React.ReactNode> = {
   eyeOpenness: <Eye className="w-5 h-5" />,
   blinkDetected: <Activity className="w-5 h-5" />,
   motionDetected: <Fingerprint className="w-5 h-5" />,
-  mouthOpen: <Mic className="w-5 h-5" />,
   consistentDescriptor: <CheckCircle2 className="w-5 h-5" />,
 };
 
@@ -674,9 +673,6 @@ export default function FaceLogin() {
                   </div>
                   <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
                     <MonitorSmartphone className="w-3 h-3" /> Screen Check
-                  </div>
-                  <div className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                    <Mic className="w-3 h-3" /> Mouth Check
                   </div>
                 </div>
                 <div className="w-full bg-green-100 rounded-full h-2 overflow-hidden">

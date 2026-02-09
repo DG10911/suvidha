@@ -6,13 +6,13 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 ## Recent Changes (Feb 2026)
 - Overhauled liveness detection to 8-layer security with challenge-response verification
 - Screen/photo detection: moire patterns, color histogram, blue ratio, saturation, brightness uniformity, reflection analysis
-- Mouth open/close detection: replaces head movement (more reliable with face-api.js 68-landmark model)
+- Removed mouth open/close detection step from liveness flow
 - Blink detection: EAR transition tracking (open->closed transitions)
 - All checks now use face-region-only analysis for better accuracy
-- Added real-time instructions during scan ("open mouth", "blink")
+- Added real-time instructions during scan ("blink")
 - Impressive scanning overlay: glowing rays, laser scan line with trail, grid pattern, floating particles, data readout HUD
 - Captured frame thumbnails shown during verification
-- Critical checks (face, texture, screen, eyes, mouth action, identity) ALL must pass
+- Critical checks (face, texture, screen, eyes, identity) ALL must pass
 - Soft checks (blink, motion) at least 1 must pass
 - Duplicate face prevention on server side (0.45 threshold)
 - Twilio integration connected for OTP/SMS

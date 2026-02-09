@@ -29,7 +29,6 @@ export interface LivenessResult {
     motionDetected: boolean;
     eyeOpenness: boolean;
     blinkDetected: boolean;
-    mouthOpen: boolean;
     consistentDescriptor: boolean;
   };
   message: string;
@@ -355,7 +354,6 @@ export async function performLivenessCheck(
       motionDetected: false,
       eyeOpenness: false,
       blinkDetected: false,
-      mouthOpen: false,
       consistentDescriptor: false,
     },
     message: "",
@@ -466,54 +464,7 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Open mouth detection ──
-  onProgress?.("mouthOpen", "checking");
-  onInstruction?.("😮 Open your mouth wide, then close it");
-
-  const baselineMouth = straightFrames.reduce((a, b) => a + b.mouthOpenness, 0) / straightFrames.length;
-  console.log("[Liveness] Baseline mouth openness:", baselineMouth.toFixed(4));
-
-  let mouthOpenDetected = false;
-  let mouthWasOpen = false;
-  let mouthClosed = false;
-  let mouthFrames: typeof allFrames = [];
-
-  mouthOpenDetected = await waitForCondition(
-    video,
-    (data) => {
-      const openness = data.mouthOpenness;
-      console.log("[Liveness] Mouth openness:", openness.toFixed(4), "baseline:", baselineMouth.toFixed(4));
-      onFaceUpdate?.(data.position);
-
-      if (!mouthWasOpen && openness > 0.22 && openness > baselineMouth + 0.08) {
-        mouthWasOpen = true;
-        onInstruction?.("✅ Good! Now close your mouth");
-      }
-      if (mouthWasOpen && openness < baselineMouth + 0.03) {
-        mouthClosed = true;
-      }
-      return mouthWasOpen && mouthClosed;
-    },
-    10000, 200, mouthFrames
-  );
-
-  if (mouthFrames.length > 0) {
-    allFrames.push(...mouthFrames);
-    captureThumb(mouthFrames[mouthFrames.length - 1].canvas);
-  }
-
-  result.checks.mouthOpen = mouthOpenDetected;
-  onProgress?.("mouthOpen", mouthOpenDetected ? "passed" : "failed");
-
-  if (!result.checks.mouthOpen) {
-    result.message = "Mouth open/close not detected. Please open your mouth wide, then close it when prompted.";
-    return result;
-  }
-
-  onInstruction?.("✅ Mouth action detected!");
-  await new Promise(r => setTimeout(r, 600));
-
-  // ── STEP 7: Blink detection (wait until detected) ──
+  // ── STEP 5: Blink detection (wait until detected) ──
   onProgress?.("blinkDetected", "checking");
   onInstruction?.("😑 Now blink your eyes 2-3 times");
 
@@ -601,7 +552,6 @@ export async function performLivenessCheck(
     result.checks.screenDetection,
     result.checks.eyeOpenness,
     result.checks.consistentDescriptor,
-    result.checks.mouthOpen,
   ];
 
   const softChecks = [
@@ -621,7 +571,7 @@ export async function performLivenessCheck(
     const failed = [];
     if (!result.checks.screenDetection) failed.push("screen/photo detected");
     if (!result.checks.textureAnalysis) failed.push("flat texture");
-    if (!result.checks.mouthOpen) failed.push("mouth action not detected");
+
     if (!result.checks.blinkDetected && !result.checks.motionDetected) failed.push("no blink or motion detected");
     if (!result.checks.eyeOpenness) failed.push("eyes not properly detected");
     result.message = failed.length > 0
@@ -737,7 +687,6 @@ export function initLivenessSteps() {
     { key: "eyeOpenness" as const, label: "Eye & Retina Scan", status: "pending" as const },
     { key: "blinkDetected" as const, label: "Blink Detection", status: "pending" as const },
     { key: "motionDetected" as const, label: "Motion Analysis", status: "pending" as const },
-    { key: "mouthOpen" as const, label: "Mouth Action Check", status: "pending" as const },
     { key: "consistentDescriptor" as const, label: "Identity Consistency", status: "pending" as const },
   ];
 }
