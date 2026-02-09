@@ -442,37 +442,41 @@ export async function performLivenessCheck(
 
   // ── STEP 5: Turn head RIGHT (wait until detected) ──
   onProgress?.("headMovement", "checking");
-  onInstruction?.("👉 Slowly turn your head to the RIGHT");
+  onInstruction?.("👉 Turn your head to the RIGHT");
 
-  console.log("[Liveness] Baseline yaw:", baselineYaw.toFixed(4));
+  const baselineNoseX = straightFrames.reduce((a, b) => a + b.position.x, 0) / straightFrames.length;
+  const baselineFaceW = straightFrames.reduce((a, b) => a + b.position.width, 0) / straightFrames.length;
+  const movementThreshold = baselineFaceW * 0.04;
+
+  console.log("[Liveness] Baseline noseX:", baselineNoseX.toFixed(1), "faceW:", baselineFaceW.toFixed(1), "threshold:", movementThreshold.toFixed(1));
 
   let rightDetected = false;
   let rightFrames: typeof allFrames = [];
-  let rightYawValue = baselineYaw;
+  let rightNoseX = baselineNoseX;
 
   rightDetected = await waitForCondition(
     video,
     (data) => {
-      const yawDelta = data.pose.yaw - baselineYaw;
-      console.log("[Liveness] RIGHT check - yaw:", data.pose.yaw.toFixed(4), "delta:", yawDelta.toFixed(4));
-      if (Math.abs(yawDelta) > 0.015) {
-        rightYawValue = data.pose.yaw;
+      const noseShift = data.position.x - baselineNoseX;
+      console.log("[Liveness] RIGHT - noseX:", data.position.x.toFixed(1), "shift:", noseShift.toFixed(1), "need:", movementThreshold.toFixed(1));
+      if (Math.abs(noseShift) > movementThreshold) {
+        rightNoseX = data.position.x;
         return true;
       }
       return false;
     },
-    10000, 250, rightFrames
+    10000, 200, rightFrames
   );
 
   if (rightDetected && rightFrames.length > 0) {
     allFrames.push(...rightFrames);
     captureThumb(rightFrames[rightFrames.length - 1].canvas);
     onInstruction?.("✅ Right turn detected!");
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   // ── STEP 6: Turn head LEFT (wait until detected) ──
-  onInstruction?.("👈 Now slowly turn your head to the LEFT");
+  onInstruction?.("👈 Now turn your head to the LEFT");
 
   let leftDetected = false;
   let leftFrames: typeof allFrames = [];
@@ -480,21 +484,22 @@ export async function performLivenessCheck(
   leftDetected = await waitForCondition(
     video,
     (data) => {
-      const yawDelta = data.pose.yaw - baselineYaw;
-      const deltaFromRight = data.pose.yaw - rightYawValue;
-      console.log("[Liveness] LEFT check - yaw:", data.pose.yaw.toFixed(4), "delta from baseline:", yawDelta.toFixed(4), "delta from right:", deltaFromRight.toFixed(4));
-      const movedFromBaseline = Math.abs(yawDelta) > 0.012;
-      const movedFromRight = Math.abs(deltaFromRight) > 0.015;
-      return movedFromBaseline && movedFromRight;
+      const shiftFromRight = data.position.x - rightNoseX;
+      const shiftFromBaseline = data.position.x - baselineNoseX;
+      console.log("[Liveness] LEFT - noseX:", data.position.x.toFixed(1), "fromRight:", shiftFromRight.toFixed(1), "fromBaseline:", shiftFromBaseline.toFixed(1));
+      const movedFromRight = Math.abs(shiftFromRight) > movementThreshold;
+      const differentDirection = (rightNoseX > baselineNoseX && data.position.x < rightNoseX) ||
+                                  (rightNoseX < baselineNoseX && data.position.x > rightNoseX);
+      return movedFromRight && (differentDirection || Math.abs(shiftFromBaseline) > movementThreshold);
     },
-    10000, 250, leftFrames
+    10000, 200, leftFrames
   );
 
   if (leftDetected && leftFrames.length > 0) {
     allFrames.push(...leftFrames);
     captureThumb(leftFrames[leftFrames.length - 1].canvas);
     onInstruction?.("✅ Left turn detected!");
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   result.checks.headMovement = rightDetected && leftDetected;
