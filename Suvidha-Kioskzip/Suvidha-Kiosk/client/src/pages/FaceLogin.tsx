@@ -709,7 +709,7 @@ export default function FaceLogin() {
                   <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Photos and printouts are blocked</li>
                   <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Phone/tablet screens are blocked</li>
                   <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Masks and face covers are blocked</li>
-                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Head movement & blink required</li>
+                  <li className="flex items-center gap-2"><XCircle className="w-4 h-4" /> Blink OR slight head movement required</li>
                 </ul>
                 <p className="text-sm text-muted-foreground">Please use your real face and follow the on-screen instructions.</p>
               </div>
