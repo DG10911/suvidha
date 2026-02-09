@@ -473,60 +473,72 @@ export async function performLivenessCheck(
     return result;
   }
 
-  // ── STEP 5: Blink detection (temporal EAR with hysteresis) ──
+  // ── STEP 5: Blink detection (temporal EAR with hysteresis + face-loss tolerance) ──
   onProgress?.("blinkDetected", "checking");
   onInstruction?.("Now blink your eyes naturally");
 
   let blinkDetected = false;
   let blinkFrames: typeof allFrames = [];
-  let blinkCount = 0;
   let baselineEar = straightFrames.reduce((a, b) => a + (b.eyes.leftOpen + b.eyes.rightOpen) / 2, 0) / straightFrames.length;
   console.log("[Liveness] Baseline EAR:", baselineEar.toFixed(4));
 
-  const EAR_CLOSE_THRESHOLD = Math.min(baselineEar * 0.78, 0.22);
-  const EAR_OPEN_THRESHOLD = Math.max(baselineEar * 0.88, 0.27);
-  const BLINK_MIN_MS = 50;
-  const BLINK_MAX_MS = 800;
+  const EAR_CLOSE = baselineEar * 0.85;
+  const EAR_OPEN = baselineEar * 0.95;
+  const BLINK_MIN_MS = 120;
+  const BLINK_MAX_MS = 450;
 
-  console.log("[Liveness] Blink thresholds - close:", EAR_CLOSE_THRESHOLD.toFixed(4), "open:", EAR_OPEN_THRESHOLD.toFixed(4));
+  console.log("[Liveness] Blink thresholds - close:", EAR_CLOSE.toFixed(4), "open:", EAR_OPEN.toFixed(4));
 
   {
     let eyeState: "OPEN" | "CLOSED" = "OPEN";
     let blinkStartTime = 0;
+    let lastSeenTime = performance.now();
+    let blinkCount = 0;
     const blinkStart = Date.now();
     const blinkTimeout = 10000;
     const blinkPoll = 80;
 
     while (Date.now() - blinkStart < blinkTimeout) {
       const det = await detectOnce(video);
+      let data: Awaited<ReturnType<typeof captureFrameData>> = null;
       if (det) {
-        const data = await captureFrameData(video, det);
-        if (data) {
-          blinkFrames.push(data);
-          const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
+        data = await captureFrameData(video, det);
+      }
 
-          console.log("[Liveness] EAR:", ear.toFixed(4), "state:", eyeState);
+      const now = performance.now();
 
-          if (ear < EAR_CLOSE_THRESHOLD && eyeState === "OPEN") {
-            eyeState = "CLOSED";
-            blinkStartTime = performance.now();
-            console.log("[Liveness] Eyes closed, EAR:", ear.toFixed(4));
-          }
-
-          if (ear > EAR_OPEN_THRESHOLD && eyeState === "CLOSED") {
-            const blinkDuration = performance.now() - blinkStartTime;
-            console.log("[Liveness] Eyes reopened, duration:", blinkDuration.toFixed(0), "ms, EAR:", ear.toFixed(4));
-
-            if (blinkDuration >= BLINK_MIN_MS && blinkDuration <= BLINK_MAX_MS) {
-              blinkCount++;
-              console.log("[Liveness] Valid blink #" + blinkCount + " (duration: " + blinkDuration.toFixed(0) + "ms)");
-            }
-            eyeState = "OPEN";
-          }
-
-          onFaceUpdate?.(data.position);
-          if (blinkCount >= 1) { blinkDetected = true; break; }
+      if (!data) {
+        if (eyeState === "CLOSED" && now - lastSeenTime < 200) {
+          // allow short face loss during blink
+        } else {
+          eyeState = "OPEN";
         }
+      } else {
+        lastSeenTime = now;
+        blinkFrames.push(data);
+        const ear = (data.eyes.leftOpen + data.eyes.rightOpen) / 2;
+
+        console.log("[Liveness] EAR:", ear.toFixed(4), "state:", eyeState, "faceDetected: true");
+
+        if (ear < EAR_CLOSE && eyeState === "OPEN") {
+          eyeState = "CLOSED";
+          blinkStartTime = now;
+          console.log("[Liveness] Eyes closed, EAR:", ear.toFixed(4));
+        }
+
+        if (ear > EAR_OPEN && eyeState === "CLOSED") {
+          const duration = now - blinkStartTime;
+          console.log("[Liveness] Eyes reopened, duration:", duration.toFixed(0), "ms, EAR:", ear.toFixed(4));
+
+          if (duration >= BLINK_MIN_MS && duration <= BLINK_MAX_MS) {
+            blinkCount++;
+            console.log("[Liveness] Valid blink #" + blinkCount + " (duration: " + duration.toFixed(0) + "ms)");
+          }
+          eyeState = "OPEN";
+        }
+
+        onFaceUpdate?.(data.position);
+        if (blinkCount >= 1) { blinkDetected = true; break; }
       }
       await new Promise(r => setTimeout(r, blinkPoll));
     }
@@ -544,23 +556,28 @@ export async function performLivenessCheck(
     await new Promise(r => setTimeout(r, 400));
   }
 
-  // ── STEP 6: Motion check (nose position drift) ──
+  // ── STEP 6: Motion check (frame-to-frame nose drift, normalized by jaw width) ──
   onProgress?.("motionDetected", "checking");
   await new Promise(r => setTimeout(r, 200));
+  const MOTION_THRESHOLD = 0.012;
+  let motionFound = false;
   if (allFrames.length >= 2) {
-    let maxNoseDrift = 0;
-    const firstNoseX = allFrames[0].noseTipX;
-    const firstNoseY = allFrames[0].noseTipY;
-    const firstJawW = allFrames[0].jawWidth;
     for (let i = 1; i < allFrames.length; i++) {
-      const normDx = Math.abs(allFrames[i].noseTipX - firstNoseX) / (firstJawW + 0.001);
-      const normDy = Math.abs(allFrames[i].noseTipY - firstNoseY) / (firstJawW + 0.001);
-      const drift = normDx + normDy;
-      if (drift > maxNoseDrift) maxNoseDrift = drift;
+      const prev = allFrames[i - 1];
+      const curr = allFrames[i];
+      const jaw = curr.jawWidth + 0.001;
+      const dx = Math.abs(curr.noseTipX - prev.noseTipX) / jaw;
+      const dy = Math.abs(curr.noseTipY - prev.noseTipY) / jaw;
+      const frameDrift = dx + dy;
+      if (frameDrift > MOTION_THRESHOLD) {
+        console.log("[Liveness] Motion detected at frame", i, "drift:", frameDrift.toFixed(4));
+        motionFound = true;
+        break;
+      }
     }
-    console.log("[Liveness] Max nose drift (normalized):", maxNoseDrift.toFixed(4));
-    result.checks.motionDetected = maxNoseDrift > 0.015;
   }
+  result.checks.motionDetected = motionFound;
+  if (!motionFound) console.log("[Liveness] No significant frame-to-frame motion detected");
   onProgress?.("motionDetected", result.checks.motionDetected ? "passed" : "failed");
 
   // ── STEP 7: Identity consistency ──
