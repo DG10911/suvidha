@@ -282,27 +282,28 @@ export async function performLivenessCheck(
   const reflectionScores: number[] = [];
   const faceSizes: number[] = [];
 
-  const totalFrames = 12;
-  const frameDelay = 400;
+  const totalFrames = 16;
+  const frameDelay = 500;
 
   const PHASE_STRAIGHT = { start: 0, end: 3 };
-  const PHASE_TURN_RIGHT = { start: 4, end: 6 };
-  const PHASE_TURN_LEFT = { start: 7, end: 9 };
-  const PHASE_BLINK = { start: 10, end: 11 };
+  const PHASE_TURN_RIGHT = { start: 4, end: 7 };
+  const PHASE_TURN_LEFT = { start: 8, end: 11 };
+  const PHASE_BLINK = { start: 12, end: 15 };
 
   onInstruction?.("Look straight at the camera");
 
   for (let i = 0; i < totalFrames; i++) {
-    if (i > 0) {
-      await new Promise(r => setTimeout(r, frameDelay));
-    }
-
     if (i === PHASE_TURN_RIGHT.start) {
-      onInstruction?.("Slowly turn your head to the right");
+      onInstruction?.("Slowly turn your head to the RIGHT →");
+      await new Promise(r => setTimeout(r, 1500));
     } else if (i === PHASE_TURN_LEFT.start) {
-      onInstruction?.("Now slowly turn your head to the left");
+      onInstruction?.("Now slowly turn your head to the LEFT ←");
+      await new Promise(r => setTimeout(r, 1500));
     } else if (i === PHASE_BLINK.start) {
-      onInstruction?.("Blink your eyes naturally");
+      onInstruction?.("Now blink your eyes 2-3 times");
+      await new Promise(r => setTimeout(r, 1200));
+    } else if (i > 0) {
+      await new Promise(r => setTimeout(r, frameDelay));
     }
 
     const canvas = document.createElement("canvas");
@@ -339,14 +340,14 @@ export async function performLivenessCheck(
     moireScores.push(detectScreenMoire(canvas, faceBox));
     reflectionScores.push(detectReflectionPatterns(canvas, faceBox));
 
-    if (i % 3 === 0) {
+    if (i % 4 === 0) {
       const frameUrl = captureFrameAsDataURL(canvas);
       result.capturedFrames?.push(frameUrl);
       onFrameCapture?.(frameUrl, i);
     }
   }
 
-  if (descriptors.length < 5) {
+  if (descriptors.length < 6) {
     result.message = "Could not detect face consistently. Please ensure your face is clearly visible and well-lit.";
     onProgress?.("faceDetected", "failed");
     return result;
