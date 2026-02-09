@@ -13,11 +13,9 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Impressive scanning overlay: glowing rays, laser scan line with trail, grid pattern, floating particles, data readout HUD
 - Captured frame thumbnails shown during verification
 - Core checks (face, texture, screen, eyes, identity) ALL must pass
-- Liveness: blink OR motion (either proves live person, not both required)
-- 1200ms warm-up delay before blink/motion evaluation (MediaPipe stabilizes via detectForVideo calls during warmup)
-- Blink detection: MediaPipe landmark eyelid collapse (159-145 left, 386-374 right), baseline-calibrated (500ms), CLOSE=baseline×0.55, OPEN=baseline×0.80, timing 80-700ms, 200ms face-drop tolerance during CLOSED state
-- Live blink score HUD: real-time eye height, baseline, thresholds, state display during blink check
-- Motion threshold: 0.009 (frame-to-frame MediaPipe nose landmark drift)
+- Liveness: motion detection (head movement proves live person)
+- Blink detection removed — motion alone serves as liveness signal
+- Motion threshold: 0.009 (frame-to-frame nose landmark drift)
 - Duplicate face prevention on server side (0.45 threshold)
 - Twilio integration connected for OTP/SMS
 
@@ -53,13 +51,10 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 ## Design Decisions
 - Face matching threshold: 0.6 (login), Duplicate detection: 0.45 (stricter)
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
-- Steps: face detect (5 frames) → texture → screen check → eyes → blink/motion (OR logic) → identity
+- Steps: face detect (5 frames) → texture → screen check → eyes → motion → identity
 - Face detection: retry with 3 configs (512/416/320) for robust detection across lighting/distances
-- Blink detection: MediaPipe landmark eyelid collapse (159-145 left, 386-374 right), baseline-calibrated (500ms), CLOSE=baseline×0.55, OPEN=baseline×0.80, timing 80-700ms, 200ms face-drop tolerance during CLOSED state
-- Blink uses state machine (OPEN→CLOSED→OPEN) with duration check, 200ms face-drop tolerance during CLOSED state, falls back to face-api.js eye height if MediaPipe unavailable
-- Liveness gate: blink OR motion must pass (not both required) - industry-standard approach
-- Motion detection: MediaPipe nose landmark drift (threshold 0.009), falls back to face-api.js frame-to-frame nose drift
-- Blink window: 8 seconds with guided instructions
+- Blink detection removed — motion alone proves liveness
+- Motion detection: nose landmark drift (threshold 0.009), falls back to face-api.js frame-to-frame nose drift
 - Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 4+ indicators)
 - Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
 - Identity consistency: 0.55 distance threshold, 55% pair consistency, requires ≥3 frames
