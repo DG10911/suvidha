@@ -58,6 +58,13 @@ export default function FaceLogin() {
   }, []);
 
   const startCamera = useCallback(async () => {
+    if (streamRef.current) {
+      if (videoRef.current && !videoRef.current.srcObject) {
+        videoRef.current.srcObject = streamRef.current;
+        await videoRef.current.play().catch(() => {});
+      }
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: 640, height: 480 }
@@ -65,6 +72,7 @@ export default function FaceLogin() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
       }
     } catch {
       console.log("Camera not available");
@@ -75,6 +83,14 @@ export default function FaceLogin() {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+    }
+  }, []);
+
+  const assignVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    if (el && streamRef.current) {
+      el.srcObject = streamRef.current;
+      el.play().catch(() => {});
     }
   }, []);
 
@@ -226,7 +242,7 @@ export default function FaceLogin() {
               <div className="bg-white p-8 rounded-3xl shadow-lg border border-border flex flex-col items-center gap-6">
                 <div className="relative w-80 h-80 rounded-3xl overflow-hidden bg-black border-4 border-blue-200">
                   <video
-                    ref={videoRef}
+                    ref={assignVideoRef}
                     autoPlay
                     playsInline
                     muted
@@ -286,7 +302,7 @@ export default function FaceLogin() {
                 <div className="flex flex-col items-center gap-3 flex-shrink-0">
                   <div className="relative w-52 h-52 rounded-2xl overflow-hidden bg-black border-4 border-blue-300">
                     <video
-                      ref={videoRef}
+                      ref={assignVideoRef}
                       autoPlay
                       playsInline
                       muted
