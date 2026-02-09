@@ -49,9 +49,10 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Face matching threshold: 0.6 (login), Duplicate detection: 0.45 (stricter)
 - Event-driven liveness: each step waits for actual detection before proceeding (not timer-based)
 - Steps: face detect → texture → screen check → eyes → turn RIGHT (wait) → turn LEFT (wait) → blink (wait) → motion → identity
-- Each action step has 8 second timeout, polls every 300ms until action detected
-- Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 4+ indicators)
-- Head movement: requires yaw delta from baseline in opposing directions for right/left
+- Head movement: yaw-based detection (threshold 0.04) with directional enforcement - left must be opposite direction from right
+- Each action step has 12 second timeout for head turns, 8 second for blink, polls every 200ms
+- Screen detection: composite score from moire, reflection, blue ratio, saturation, color variance, brightness (threshold: 5+ indicators)
+- Real-time face tracking canvas overlay: draws bounding box, corner markers, scan line, and crosshair markers on detected face during liveness check
 - Identity consistency: 0.5 distance threshold, 60% pair consistency (relaxed for head turns)
 - Speech queue: 150ms pre-speak delay, 200ms inter-queue delay, 800ms language change delay
 

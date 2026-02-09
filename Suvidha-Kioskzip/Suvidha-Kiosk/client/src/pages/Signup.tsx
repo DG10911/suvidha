@@ -40,12 +40,16 @@ export default function Signup() {
   const [modelsReady, setModelsReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [lang, setLang] = useState(() => loadPreferences().language);
   const [livenessSteps, setLivenessSteps] = useState<LivenessStep[]>([]);
   const [scanProgress, setScanProgress] = useState(0);
   const [instruction, setInstruction] = useState("");
   const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
+  const faceBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const overlayAnimRef = useRef<number>(0);
+  const scanLineRef = useRef(0);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -153,6 +157,91 @@ export default function Signup() {
     };
   }, [step, startCamera, stopCamera]);
 
+  useEffect(() => {
+    if (step !== "liveness") {
+      faceBoxRef.current = null;
+      if (overlayAnimRef.current) cancelAnimationFrame(overlayAnimRef.current);
+      return;
+    }
+
+    const drawOverlay = () => {
+      const oc = overlayCanvasRef.current;
+      const vid = videoRef.current;
+      if (!oc || !vid) { overlayAnimRef.current = requestAnimationFrame(drawOverlay); return; }
+
+      const displayW = oc.clientWidth;
+      const displayH = oc.clientHeight;
+      if (oc.width !== displayW || oc.height !== displayH) {
+        oc.width = displayW;
+        oc.height = displayH;
+      }
+
+      const ctx = oc.getContext("2d");
+      if (!ctx) { overlayAnimRef.current = requestAnimationFrame(drawOverlay); return; }
+      ctx.clearRect(0, 0, oc.width, oc.height);
+
+      const fb = faceBoxRef.current;
+      if (fb && vid.videoWidth > 0) {
+        const scaleX = oc.width / vid.videoWidth;
+        const scaleY = oc.height / vid.videoHeight;
+        const fx = fb.x * scaleX;
+        const fy = fb.y * scaleY;
+        const fw = fb.width * scaleX;
+        const fh = fb.height * scaleY;
+
+        ctx.strokeStyle = "#00e5ff";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(fx, fy, fw, fh);
+        ctx.setLineDash([]);
+
+        const cornerLen = Math.min(fw, fh) * 0.2;
+        ctx.strokeStyle = "#00e5ff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy + cornerLen); ctx.lineTo(fx, fy); ctx.lineTo(fx + cornerLen, fy);
+        ctx.moveTo(fx + fw - cornerLen, fy); ctx.lineTo(fx + fw, fy); ctx.lineTo(fx + fw, fy + cornerLen);
+        ctx.moveTo(fx + fw, fy + fh - cornerLen); ctx.lineTo(fx + fw, fy + fh); ctx.lineTo(fx + fw - cornerLen, fy + fh);
+        ctx.moveTo(fx + cornerLen, fy + fh); ctx.lineTo(fx, fy + fh); ctx.lineTo(fx, fy + fh - cornerLen);
+        ctx.stroke();
+
+        scanLineRef.current = (scanLineRef.current + 1.5) % fh;
+        const scanY = fy + scanLineRef.current;
+        const grad = ctx.createLinearGradient(fx, scanY, fx + fw, scanY);
+        grad.addColorStop(0, "transparent");
+        grad.addColorStop(0.3, "rgba(0, 229, 255, 0.5)");
+        grad.addColorStop(0.5, "rgba(0, 229, 255, 0.8)");
+        grad.addColorStop(0.7, "rgba(0, 229, 255, 0.5)");
+        grad.addColorStop(1, "transparent");
+        ctx.fillStyle = grad;
+        ctx.fillRect(fx, scanY - 1, fw, 3);
+
+        const crossSize = 6;
+        const cx = fx + fw / 2;
+        const cy = fy + fh / 2;
+        ctx.strokeStyle = "rgba(0, 229, 255, 0.6)";
+        ctx.lineWidth = 1;
+        const points: [number, number][] = [
+          [cx, cy - fh * 0.15], [cx, cy + fh * 0.15],
+          [cx - fw * 0.15, cy], [cx + fw * 0.15, cy],
+          [cx - fw * 0.2, cy - fh * 0.1], [cx + fw * 0.2, cy - fh * 0.1],
+          [cx - fw * 0.15, cy + fh * 0.2], [cx + fw * 0.15, cy + fh * 0.2],
+        ];
+        for (const [px, py] of points) {
+          ctx.beginPath();
+          ctx.moveTo(px - crossSize, py); ctx.lineTo(px + crossSize, py);
+          ctx.moveTo(px, py - crossSize); ctx.lineTo(px, py + crossSize);
+          ctx.stroke();
+        }
+      }
+
+      overlayAnimRef.current = requestAnimationFrame(drawOverlay);
+    };
+
+    overlayAnimRef.current = requestAnimationFrame(drawOverlay);
+    return () => { if (overlayAnimRef.current) cancelAnimationFrame(overlayAnimRef.current); };
+  }, [step]);
+
   const doSignup = async (capturedImage: string | null, descriptor: number[] | null) => {
     setStep("faceprocessing");
     setSignupError(null);
@@ -247,6 +336,9 @@ export default function Signup() {
         },
         (frameUrl) => {
           setCapturedFrames(prev => [...prev, frameUrl]);
+        },
+        (faceBox) => {
+          faceBoxRef.current = faceBox;
         }
       );
 
@@ -554,93 +646,98 @@ export default function Signup() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full space-y-5"
+              className="w-full space-y-4"
             >
               <div className="text-center">
                 <h3 className="text-3xl font-bold font-heading mb-1">Verifying Real Face</h3>
-                <p className="text-lg text-muted-foreground">Running 8-layer security verification for registration...</p>
               </div>
 
-              <div className="flex gap-5 items-start">
-                <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                  <div className="relative w-52 h-52 rounded-2xl overflow-hidden bg-black border-4 border-blue-300">
-                    <video
-                      ref={assignVideoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 border-4 border-blue-400/50 rounded-2xl pointer-events-none">
-                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
-                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
-                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
-                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
-                    </div>
-                    <div className="absolute bottom-0 inset-x-0 h-0.5 bg-green-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative w-80 h-80 rounded-3xl overflow-hidden bg-black border-4 border-blue-400 shadow-lg shadow-blue-500/20">
+                  <video
+                    ref={assignVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+
+                  <canvas
+                    ref={overlayCanvasRef}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                  />
+
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute top-0 left-0 w-10 h-10 border-t-[3px] border-l-[3px] border-cyan-400 rounded-tl-xl"></div>
+                    <div className="absolute top-0 right-0 w-10 h-10 border-t-[3px] border-r-[3px] border-cyan-400 rounded-tr-xl"></div>
+                    <div className="absolute bottom-0 left-0 w-10 h-10 border-b-[3px] border-l-[3px] border-cyan-400 rounded-bl-xl"></div>
+                    <div className="absolute bottom-0 right-0 w-10 h-10 border-b-[3px] border-r-[3px] border-cyan-400 rounded-br-xl"></div>
                   </div>
 
-                  {instruction && (
-                    <motion.div
-                      key={instruction}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold text-center max-w-[220px]"
-                    >
-                      {instruction}
-                    </motion.div>
-                  )}
-
-                  {capturedFrames.length > 0 && (
-                    <div className="flex gap-1.5">
-                      {capturedFrames.slice(-4).map((frame, idx) => (
-                        <div key={idx} className="w-11 h-11 rounded-lg overflow-hidden border-2 border-green-300">
-                          <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600/90 text-white px-2 py-1 rounded-lg text-xs font-bold">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    SCANNING
+                  </div>
                 </div>
 
-                <div className="flex-1 space-y-2">
-                  {livenessSteps.map((s) => (
-                    <div
-                      key={s.key}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 ${
-                        s.status === "passed" ? "border-green-300 bg-green-50" :
-                        s.status === "failed" ? "border-red-300 bg-red-50" :
-                        s.status === "checking" ? "border-blue-300 bg-blue-50 animate-pulse" :
-                        "border-gray-200 bg-gray-50"
-                      }`}
-                    >
-                      <div className={`flex-shrink-0 ${
-                        s.status === "passed" ? "text-green-600" :
-                        s.status === "failed" ? "text-red-500" :
-                        s.status === "checking" ? "text-blue-600" :
-                        "text-gray-400"
-                      }`}>
-                        {s.status === "checking" ? <Loader2 className="w-5 h-5 animate-spin" /> :
-                         s.status === "passed" ? <CheckCircle2 className="w-5 h-5" /> :
-                         s.status === "failed" ? <XCircle className="w-5 h-5" /> :
-                         stepIcons[s.key] || <Shield className="w-5 h-5" />}
+                {instruction && (
+                  <motion.div
+                    key={instruction}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`px-6 py-3 rounded-2xl text-lg font-bold text-center max-w-[320px] ${
+                      instruction.includes("✅")
+                        ? "bg-green-100 text-green-700 border-2 border-green-300"
+                        : "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
+                    }`}
+                  >
+                    {instruction}
+                  </motion.div>
+                )}
+
+                {capturedFrames.length > 0 && (
+                  <div className="flex gap-2">
+                    {capturedFrames.slice(-4).map((frame, idx) => (
+                      <div key={idx} className="w-12 h-12 rounded-lg overflow-hidden border-2 border-cyan-300 shadow-sm">
+                        <img src={frame} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
                       </div>
-                      <span className={`text-sm font-semibold ${
-                        s.status === "passed" ? "text-green-700" :
-                        s.status === "failed" ? "text-red-600" :
-                        s.status === "checking" ? "text-blue-700" :
-                        "text-gray-500"
-                      }`}>
-                        {s.label}
-                      </span>
-                      {s.status === "passed" && (
-                        <span className="ml-auto text-xs text-green-600 font-bold">PASS</span>
-                      )}
-                      {s.status === "failed" && (
-                        <span className="ml-auto text-xs text-red-500 font-bold">FAIL</span>
-                      )}
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {livenessSteps.map((s) => (
+                  <div
+                    key={s.key}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all duration-300 ${
+                      s.status === "passed" ? "border-green-300 bg-green-50" :
+                      s.status === "failed" ? "border-red-300 bg-red-50" :
+                      s.status === "checking" ? "border-blue-300 bg-blue-50 animate-pulse" :
+                      "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <div className={`${
+                      s.status === "passed" ? "text-green-600" :
+                      s.status === "failed" ? "text-red-500" :
+                      s.status === "checking" ? "text-blue-600" :
+                      "text-gray-400"
+                    }`}>
+                      {s.status === "checking" ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                       s.status === "passed" ? <CheckCircle2 className="w-4 h-4" /> :
+                       s.status === "failed" ? <XCircle className="w-4 h-4" /> :
+                       stepIcons[s.key] || <Shield className="w-4 h-4" />}
                     </div>
-                  ))}
-                </div>
+                    <span className={`text-[10px] font-semibold text-center leading-tight ${
+                      s.status === "passed" ? "text-green-700" :
+                      s.status === "failed" ? "text-red-600" :
+                      s.status === "checking" ? "text-blue-700" :
+                      "text-gray-500"
+                    }`}>
+                      {s.label.split(" ").slice(0, 2).join(" ")}
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">

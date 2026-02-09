@@ -33,6 +33,7 @@ export default function FaceLogin() {
   const [faceCapture, setFaceCapture] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [lang, setLang] = useState(() => loadPreferences().language);
   const [modelsReady, setModelsReady] = useState(false);
@@ -40,6 +41,9 @@ export default function FaceLogin() {
   const [scanProgress, setScanProgress] = useState(0);
   const [instruction, setInstruction] = useState("");
   const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
+  const faceBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const overlayAnimRef = useRef<number>(0);
+  const scanLineRef = useRef(0);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -105,6 +109,91 @@ export default function FaceLogin() {
     };
   }, [step, modelsReady, startCamera, stopCamera]);
 
+  useEffect(() => {
+    if (step !== "liveness") {
+      faceBoxRef.current = null;
+      if (overlayAnimRef.current) cancelAnimationFrame(overlayAnimRef.current);
+      return;
+    }
+
+    const drawOverlay = () => {
+      const oc = overlayCanvasRef.current;
+      const vid = videoRef.current;
+      if (!oc || !vid) { overlayAnimRef.current = requestAnimationFrame(drawOverlay); return; }
+
+      const displayW = oc.clientWidth;
+      const displayH = oc.clientHeight;
+      if (oc.width !== displayW || oc.height !== displayH) {
+        oc.width = displayW;
+        oc.height = displayH;
+      }
+
+      const ctx = oc.getContext("2d");
+      if (!ctx) { overlayAnimRef.current = requestAnimationFrame(drawOverlay); return; }
+      ctx.clearRect(0, 0, oc.width, oc.height);
+
+      const fb = faceBoxRef.current;
+      if (fb && vid.videoWidth > 0) {
+        const scaleX = oc.width / vid.videoWidth;
+        const scaleY = oc.height / vid.videoHeight;
+        const fx = fb.x * scaleX;
+        const fy = fb.y * scaleY;
+        const fw = fb.width * scaleX;
+        const fh = fb.height * scaleY;
+
+        ctx.strokeStyle = "#00e5ff";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(fx, fy, fw, fh);
+        ctx.setLineDash([]);
+
+        const cornerLen = Math.min(fw, fh) * 0.2;
+        ctx.strokeStyle = "#00e5ff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy + cornerLen); ctx.lineTo(fx, fy); ctx.lineTo(fx + cornerLen, fy);
+        ctx.moveTo(fx + fw - cornerLen, fy); ctx.lineTo(fx + fw, fy); ctx.lineTo(fx + fw, fy + cornerLen);
+        ctx.moveTo(fx + fw, fy + fh - cornerLen); ctx.lineTo(fx + fw, fy + fh); ctx.lineTo(fx + fw - cornerLen, fy + fh);
+        ctx.moveTo(fx + cornerLen, fy + fh); ctx.lineTo(fx, fy + fh); ctx.lineTo(fx, fy + fh - cornerLen);
+        ctx.stroke();
+
+        scanLineRef.current = (scanLineRef.current + 1.5) % fh;
+        const scanY = fy + scanLineRef.current;
+        const grad = ctx.createLinearGradient(fx, scanY, fx + fw, scanY);
+        grad.addColorStop(0, "transparent");
+        grad.addColorStop(0.3, "rgba(0, 229, 255, 0.5)");
+        grad.addColorStop(0.5, "rgba(0, 229, 255, 0.8)");
+        grad.addColorStop(0.7, "rgba(0, 229, 255, 0.5)");
+        grad.addColorStop(1, "transparent");
+        ctx.fillStyle = grad;
+        ctx.fillRect(fx, scanY - 1, fw, 3);
+
+        const crossSize = 6;
+        const cx = fx + fw / 2;
+        const cy = fy + fh / 2;
+        ctx.strokeStyle = "rgba(0, 229, 255, 0.6)";
+        ctx.lineWidth = 1;
+        const points = [
+          [cx, cy - fh * 0.15], [cx, cy + fh * 0.15],
+          [cx - fw * 0.15, cy], [cx + fw * 0.15, cy],
+          [cx - fw * 0.2, cy - fh * 0.1], [cx + fw * 0.2, cy - fh * 0.1],
+          [cx - fw * 0.15, cy + fh * 0.2], [cx + fw * 0.15, cy + fh * 0.2],
+        ];
+        for (const [px, py] of points) {
+          ctx.beginPath();
+          ctx.moveTo(px - crossSize, py); ctx.lineTo(px + crossSize, py);
+          ctx.moveTo(px, py - crossSize); ctx.lineTo(px, py + crossSize);
+          ctx.stroke();
+        }
+      }
+
+      overlayAnimRef.current = requestAnimationFrame(drawOverlay);
+    };
+
+    overlayAnimRef.current = requestAnimationFrame(drawOverlay);
+    return () => { if (overlayAnimRef.current) cancelAnimationFrame(overlayAnimRef.current); };
+  }, [step]);
+
   const attemptFaceLogin = async () => {
     if (!videoRef.current) return;
 
@@ -143,6 +232,9 @@ export default function FaceLogin() {
       },
       (frameUrl) => {
         setCapturedFrames(prev => [...prev, frameUrl]);
+      },
+      (faceBox) => {
+        faceBoxRef.current = faceBox;
       }
     );
 
@@ -298,7 +390,7 @@ export default function FaceLogin() {
               </div>
 
               <div className="flex flex-col items-center gap-4">
-                <div className="relative w-72 h-72 rounded-3xl overflow-hidden bg-black border-4 border-blue-400 shadow-lg shadow-blue-500/20">
+                <div className="relative w-80 h-80 rounded-3xl overflow-hidden bg-black border-4 border-blue-400 shadow-lg shadow-blue-500/20">
                   <video
                     ref={assignVideoRef}
                     autoPlay
@@ -307,26 +399,16 @@ export default function FaceLogin() {
                     className="w-full h-full object-cover"
                   />
 
+                  <canvas
+                    ref={overlayCanvasRef}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                  />
+
                   <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute top-0 left-0 w-10 h-10 border-t-[3px] border-l-[3px] border-cyan-400 rounded-tl-xl"></div>
                     <div className="absolute top-0 right-0 w-10 h-10 border-t-[3px] border-r-[3px] border-cyan-400 rounded-tr-xl"></div>
                     <div className="absolute bottom-0 left-0 w-10 h-10 border-b-[3px] border-l-[3px] border-cyan-400 rounded-bl-xl"></div>
                     <div className="absolute bottom-0 right-0 w-10 h-10 border-b-[3px] border-r-[3px] border-cyan-400 rounded-br-xl"></div>
-                  </div>
-
-                  <div className="absolute inset-0 pointer-events-none opacity-20">
-                    <div className="absolute top-1/4 left-4 right-4 h-px bg-cyan-400"></div>
-                    <div className="absolute top-1/2 left-4 right-4 h-px bg-cyan-400"></div>
-                    <div className="absolute top-3/4 left-4 right-4 h-px bg-cyan-400"></div>
-                    <div className="absolute left-1/4 top-4 bottom-4 w-px bg-cyan-400"></div>
-                    <div className="absolute left-1/2 top-4 bottom-4 w-px bg-cyan-400"></div>
-                    <div className="absolute left-3/4 top-4 bottom-4 w-px bg-cyan-400"></div>
-                  </div>
-
-                  <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-[scanVertical_2s_ease-in-out_infinite] pointer-events-none"></div>
-
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-40 h-52 border-2 border-cyan-400/40 rounded-[40%] animate-pulse"></div>
                   </div>
 
                   <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600/90 text-white px-2 py-1 rounded-lg text-xs font-bold">
