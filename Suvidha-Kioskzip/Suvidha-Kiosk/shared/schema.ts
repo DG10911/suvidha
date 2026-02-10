@@ -180,7 +180,47 @@ export const govtSchemes = pgTable("govt_schemes", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const certificateApplications = pgTable("certificate_applications", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  applicationId: text("application_id").notNull().unique(),
+  certificateType: text("certificate_type").notNull(),
+  applicantName: text("applicant_name").notNull(),
+  fatherName: text("father_name"),
+  motherName: text("mother_name"),
+  dateOfBirth: text("date_of_birth"),
+  address: text("address"),
+  purpose: text("purpose"),
+  additionalDetails: text("additional_details"),
+  status: text("status").notNull().default("submitted"),
+  remarks: text("remarks"),
+  expectedDate: text("expected_date"),
+  fee: text("fee"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const rtiApplications = pgTable("rti_applications", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  rtiId: text("rti_id").notNull().unique(),
+  department: text("department").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+  applicantName: text("applicant_name").notNull(),
+  applicantAddress: text("applicant_address").notNull(),
+  bplStatus: boolean("bpl_status").default(false),
+  fee: text("fee").notNull().default("10"),
+  status: text("status").notNull().default("submitted"),
+  responseDate: text("response_date"),
+  response: text("response"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export type GovtScheme = typeof govtSchemes.$inferSelect;
+export type CertificateApplication = typeof certificateApplications.$inferSelect;
+export type RtiApplication = typeof rtiApplications.$inferSelect;
 export type FaceProfile = typeof faceProfiles.$inferSelect;
 export type QrToken = typeof qrTokens.$inferSelect;
 export type Complaint = typeof complaints.$inferSelect;

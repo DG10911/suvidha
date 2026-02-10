@@ -21,6 +21,8 @@ import {
   announcements,
   emergencyLogs,
   govtSchemes,
+  certificateApplications,
+  rtiApplications,
 } from "../shared/schema";
 import { eq, desc, and, sql, gte, lte, avg, count } from "drizzle-orm";
 import { registerAudioRoutes } from "./replit_integrations/audio/index.js";
@@ -1523,6 +1525,330 @@ export async function registerRoutes(
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message });
     }
+  });
+
+  // ==================== CERTIFICATE APPLICATIONS ====================
+
+  const certificateTypes = [
+    { id: "birth", name: "Birth Certificate", fee: "50", processingDays: 7, docs: "Hospital record, Parent Aadhaar, Address proof" },
+    { id: "death", name: "Death Certificate", fee: "50", processingDays: 7, docs: "Hospital record / Doctor certificate, Family Aadhaar" },
+    { id: "income", name: "Income Certificate", fee: "30", processingDays: 10, docs: "Aadhaar, Ration Card, Salary slip / Self-declaration" },
+    { id: "caste", name: "Caste Certificate (SC/ST/OBC)", fee: "30", processingDays: 15, docs: "Aadhaar, Father's caste certificate, Affidavit" },
+    { id: "domicile", name: "Domicile Certificate", fee: "30", processingDays: 15, docs: "Aadhaar, Ration Card, 10th marksheet, Electricity bill" },
+    { id: "marriage", name: "Marriage Certificate", fee: "100", processingDays: 15, docs: "Aadhaar (both spouses), Marriage photos, Witness Aadhaar (2)" },
+    { id: "residence", name: "Residence Certificate", fee: "30", processingDays: 10, docs: "Aadhaar, Ration Card, Electricity/Water bill" },
+    { id: "character", name: "Character Certificate", fee: "30", processingDays: 10, docs: "Aadhaar, Passport photo, Police verification form" },
+  ];
+
+  app.get("/api/certificates/types", (_req: Request, res: Response) => {
+    res.json({ success: true, types: certificateTypes });
+  });
+
+  app.post("/api/certificates/apply", async (req: Request, res: Response) => {
+    try {
+      const { userId, certificateType, applicantName, fatherName, motherName, dateOfBirth, address, purpose, additionalDetails } = req.body;
+      if (!certificateType || !applicantName || !address) {
+        res.status(400).json({ success: false, message: "Certificate type, applicant name, and address are required" });
+        return;
+      }
+
+      const certType = certificateTypes.find(c => c.id === certificateType);
+      if (!certType) {
+        res.status(400).json({ success: false, message: "Invalid certificate type" });
+        return;
+      }
+
+      const applicationId = `CERT-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+
+      const expDate = new Date();
+      expDate.setDate(expDate.getDate() + certType.processingDays);
+
+      const [application] = await db.insert(certificateApplications).values({
+        userId: userId || null,
+        applicationId,
+        certificateType,
+        applicantName,
+        fatherName: fatherName || null,
+        motherName: motherName || null,
+        dateOfBirth: dateOfBirth || null,
+        address,
+        purpose: purpose || null,
+        additionalDetails: additionalDetails || null,
+        status: "submitted",
+        fee: certType.fee,
+        expectedDate: expDate.toISOString().split("T")[0],
+      }).returning();
+
+      if (userId) {
+        await db.insert(notifications).values({
+          userId,
+          type: "info",
+          title: `${certType.name} Application Submitted`,
+          message: `Your application ${applicationId} for ${certType.name} has been submitted. Fee: ₹${certType.fee}. Expected by: ${expDate.toLocaleDateString("en-IN")}`,
+          read: false,
+        });
+
+        await db.insert(documents).values({
+          userId,
+          title: `Certificate Application - ${applicationId}`,
+          type: "application",
+          service: certType.name,
+          referenceId: applicationId,
+          content: JSON.stringify({ applicationId, certificateType: certType.name, applicantName, status: "submitted", fee: certType.fee, expectedDate: expDate.toISOString().split("T")[0] }),
+        });
+      }
+
+      res.json({ success: true, application, certificateInfo: certType });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/certificates/my", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) { res.status(400).json({ success: false, message: "userId required" }); return; }
+
+      const apps = await db.select().from(certificateApplications)
+        .where(eq(certificateApplications.userId, userId))
+        .orderBy(desc(certificateApplications.createdAt));
+
+      res.json({ success: true, applications: apps });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/certificates/track/:applicationId", async (req: Request, res: Response) => {
+    try {
+      const [app] = await db.select().from(certificateApplications)
+        .where(eq(certificateApplications.applicationId, req.params.applicationId))
+        .limit(1);
+
+      if (!app) { res.status(404).json({ success: false, message: "Application not found" }); return; }
+      res.json({ success: true, application: app });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== RTI APPLICATIONS ====================
+
+  const rtiDepartments = [
+    { id: "collector", name: "District Collector Office" },
+    { id: "municipal", name: "Municipal Corporation, Raipur" },
+    { id: "police", name: "Police Department" },
+    { id: "education", name: "Education Department" },
+    { id: "health", name: "Health Department" },
+    { id: "phe", name: "Public Health Engineering (PHE)" },
+    { id: "pwd", name: "Public Works Department (PWD)" },
+    { id: "revenue", name: "Revenue Department" },
+    { id: "agriculture", name: "Agriculture Department" },
+    { id: "forest", name: "Forest Department" },
+    { id: "electricity", name: "CSPDCL / Electricity Board" },
+    { id: "transport", name: "Transport Department / RTO" },
+  ];
+
+  app.get("/api/rti/departments", (_req: Request, res: Response) => {
+    res.json({ success: true, departments: rtiDepartments });
+  });
+
+  app.post("/api/rti/apply", async (req: Request, res: Response) => {
+    try {
+      const { userId, department, subject, description, applicantName, applicantAddress, bplStatus } = req.body;
+      if (!department || !subject || !description || !applicantName || !applicantAddress) {
+        res.status(400).json({ success: false, message: "All fields are required" });
+        return;
+      }
+
+      const rtiId = `RTI-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+      const fee = bplStatus ? "0" : "10";
+
+      const responseDeadline = new Date();
+      responseDeadline.setDate(responseDeadline.getDate() + 30);
+
+      const [application] = await db.insert(rtiApplications).values({
+        userId: userId || null,
+        rtiId,
+        department,
+        subject,
+        description,
+        applicantName,
+        applicantAddress,
+        bplStatus: bplStatus || false,
+        fee,
+        status: "submitted",
+        responseDate: responseDeadline.toISOString().split("T")[0],
+      }).returning();
+
+      if (userId) {
+        const deptName = rtiDepartments.find(d => d.id === department)?.name || department;
+
+        await db.insert(notifications).values({
+          userId,
+          type: "info",
+          title: "RTI Application Filed",
+          message: `Your RTI application ${rtiId} to ${deptName} has been filed. Fee: ₹${fee}. Response expected by: ${responseDeadline.toLocaleDateString("en-IN")}`,
+          read: false,
+        });
+
+        await db.insert(documents).values({
+          userId,
+          title: `RTI Application - ${rtiId}`,
+          type: "application",
+          service: "RTI - " + deptName,
+          referenceId: rtiId,
+          content: JSON.stringify({ rtiId, department: deptName, subject, status: "submitted", fee, responseDeadline: responseDeadline.toISOString().split("T")[0] }),
+        });
+      }
+
+      res.json({ success: true, application, rtiId });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/rti/my", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) { res.status(400).json({ success: false, message: "userId required" }); return; }
+
+      const apps = await db.select().from(rtiApplications)
+        .where(eq(rtiApplications.userId, userId))
+        .orderBy(desc(rtiApplications.createdAt));
+
+      res.json({ success: true, applications: apps });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/rti/track/:rtiId", async (req: Request, res: Response) => {
+    try {
+      const [app] = await db.select().from(rtiApplications)
+        .where(eq(rtiApplications.rtiId, req.params.rtiId))
+        .limit(1);
+
+      if (!app) { res.status(404).json({ success: false, message: "RTI application not found" }); return; }
+      res.json({ success: true, application: app });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== NEARBY SERVICES DIRECTORY ====================
+
+  const nearbyServices = [
+    { category: "hospital", name: "AIIMS Raipur", address: "Tatibandh, GE Road, Raipur 492099", phone: "0771-2572222", type: "Government Hospital", hours: "24/7 Emergency", lat: 21.2514, lng: 81.6296 },
+    { category: "hospital", name: "DKS Post Graduate Institute", address: "Rajbandha Maidan, Raipur", phone: "0771-2523255", type: "Government Hospital", hours: "24/7 Emergency", lat: 21.2362, lng: 81.6314 },
+    { category: "hospital", name: "Ambedkar Hospital", address: "Byron Bazar, Raipur", phone: "0771-2224888", type: "Government Hospital", hours: "24/7", lat: 21.2455, lng: 81.6316 },
+    { category: "hospital", name: "District Hospital, Raipur", address: "Jail Road, Raipur", phone: "0771-2234567", type: "Government Hospital", hours: "24/7", lat: 21.2401, lng: 81.6356 },
+    { category: "police", name: "City Kotwali Police Station", address: "Kotwali Chowk, Raipur", phone: "0771-2229911", type: "Police Station", hours: "24/7", lat: 21.2457, lng: 81.6314 },
+    { category: "police", name: "Civil Lines Police Station", address: "Civil Lines, Raipur", phone: "0771-2228100", type: "Police Station", hours: "24/7", lat: 21.2520, lng: 81.6280 },
+    { category: "police", name: "Telibandha Police Station", address: "Telibandha, Raipur", phone: "0771-2283322", type: "Police Station", hours: "24/7", lat: 21.2395, lng: 81.6509 },
+    { category: "police", name: "SP Office Raipur", address: "Civil Lines, Raipur", phone: "0771-2223344", type: "Superintendent Office", hours: "10:00-17:00", lat: 21.2530, lng: 81.6290 },
+    { category: "bank", name: "SBI Main Branch", address: "Jaistambh Chowk, Raipur", phone: "0771-2224567", type: "Public Sector Bank", hours: "10:00-16:00 (Mon-Sat)", lat: 21.2487, lng: 81.6339 },
+    { category: "bank", name: "Bank of India", address: "Pandri, Raipur", phone: "0771-2225656", type: "Public Sector Bank", hours: "10:00-16:00 (Mon-Sat)", lat: 21.2300, lng: 81.6330 },
+    { category: "bank", name: "Central Bank of India", address: "Malviya Road, Raipur", phone: "0771-2225000", type: "Public Sector Bank", hours: "10:00-16:00 (Mon-Sat)", lat: 21.2460, lng: 81.6340 },
+    { category: "postoffice", name: "GPO Raipur (Head Post Office)", address: "Jaistambh Chowk, Raipur 492001", phone: "0771-2224008", type: "Head Post Office", hours: "09:00-17:00 (Mon-Sat)", lat: 21.2485, lng: 81.6338 },
+    { category: "postoffice", name: "Pandri Post Office", address: "Pandri, Raipur", phone: "0771-2225100", type: "Sub Post Office", hours: "09:00-17:00 (Mon-Sat)", lat: 21.2310, lng: 81.6320 },
+    { category: "school", name: "Kendriya Vidyalaya No.1", address: "Sector 4, Raipur", phone: "0771-2254333", type: "Central Government School", hours: "07:30-14:00", lat: 21.2567, lng: 81.6200 },
+    { category: "school", name: "Govt. Higher Secondary School", address: "Civil Lines, Raipur", phone: "0771-2222444", type: "Government School", hours: "07:30-14:00", lat: 21.2510, lng: 81.6270 },
+    { category: "gas", name: "Indane Gas Agency - Raipur", address: "Devendra Nagar, Raipur", phone: "0771-2227788", type: "LPG Distributor", hours: "09:00-18:00 (Mon-Sat)", lat: 21.2400, lng: 81.6450 },
+    { category: "gas", name: "HP Gas Agency - Central", address: "Pandri, Raipur", phone: "0771-2225599", type: "LPG Distributor", hours: "09:00-18:00 (Mon-Sat)", lat: 21.2320, lng: 81.6350 },
+    { category: "ration", name: "Fair Price Shop - Ward 10", address: "Moudhapara, Raipur", phone: "9876543210", type: "Ration Shop", hours: "08:00-14:00 (Mon-Sat)", lat: 21.2380, lng: 81.6380 },
+    { category: "ration", name: "Fair Price Shop - Ward 25", address: "Pandri, Raipur", phone: "9876543211", type: "Ration Shop", hours: "08:00-14:00 (Mon-Sat)", lat: 21.2290, lng: 81.6340 },
+  ];
+
+  app.get("/api/nearby-services", (req: Request, res: Response) => {
+    const category = req.query.category as string;
+    const search = (req.query.search as string || "").toLowerCase();
+
+    let result = nearbyServices;
+    if (category && category !== "all") {
+      result = result.filter(s => s.category === category);
+    }
+    if (search) {
+      result = result.filter(s =>
+        s.name.toLowerCase().includes(search) ||
+        s.address.toLowerCase().includes(search) ||
+        s.type.toLowerCase().includes(search)
+      );
+    }
+
+    res.json({ success: true, services: result });
+  });
+
+  // ==================== PROPERTY TAX CALCULATOR ====================
+
+  app.post("/api/tax/calculate", (req: Request, res: Response) => {
+    const { propertyType, zone, builtUpArea, floor, age, selfOccupied } = req.body;
+
+    const baseRates: Record<string, number> = {
+      residential: 1.5,
+      commercial: 4.0,
+      industrial: 3.5,
+      mixeduse: 2.5,
+    };
+
+    const zoneMultiplier: Record<string, number> = {
+      A: 1.5,
+      B: 1.2,
+      C: 1.0,
+      D: 0.8,
+    };
+
+    const floorMultiplier: Record<string, number> = {
+      ground: 1.0,
+      first: 1.1,
+      second: 1.15,
+      third: 1.2,
+    };
+
+    const baseRate = baseRates[propertyType] || 1.5;
+    const zoneMul = zoneMultiplier[zone] || 1.0;
+    const floorMul = floorMultiplier[floor] || 1.0;
+    const area = parseFloat(builtUpArea) || 0;
+
+    let annualValue = area * baseRate * zoneMul * floorMul * 12;
+
+    let ageDiscount = 0;
+    const propAge = parseInt(age) || 0;
+    if (propAge > 25) ageDiscount = 0.20;
+    else if (propAge > 15) ageDiscount = 0.10;
+
+    annualValue = annualValue * (1 - ageDiscount);
+
+    if (selfOccupied) annualValue = annualValue * 0.6;
+
+    const generalTax = annualValue * 0.12;
+    const waterTax = annualValue * 0.04;
+    const sewageTax = annualValue * 0.02;
+    const lightingTax = annualValue * 0.015;
+    const cleaningTax = annualValue * 0.06;
+
+    const totalTax = generalTax + waterTax + sewageTax + lightingTax + cleaningTax;
+
+    const earlyDiscount = totalTax * 0.10;
+
+    res.json({
+      success: true,
+      calculation: {
+        annualValue: Math.round(annualValue),
+        breakdown: [
+          { name: "General Tax (12%)", amount: Math.round(generalTax) },
+          { name: "Water Tax (4%)", amount: Math.round(waterTax) },
+          { name: "Sewage Tax (2%)", amount: Math.round(sewageTax) },
+          { name: "Lighting Tax (1.5%)", amount: Math.round(lightingTax) },
+          { name: "Cleaning Tax (6%)", amount: Math.round(cleaningTax) },
+        ],
+        totalTax: Math.round(totalTax),
+        earlyPaymentDiscount: Math.round(earlyDiscount),
+        afterDiscount: Math.round(totalTax - earlyDiscount),
+        ageDiscountApplied: `${ageDiscount * 100}%`,
+        selfOccupiedReduction: selfOccupied ? "40% reduction applied" : "None",
+      },
+    });
   });
 
   // ==================== GOVT SCHEMES ====================

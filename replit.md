@@ -10,7 +10,11 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
   - **Emergency SOS**: 6 emergency services (Police 100, Ambulance 108, Fire 101, Gas 1906, Electricity 1912, Water helpline) with alert logging and history
   - **Feedback System**: Star ratings (1-5) for 7 service categories, aggregated ratings summary, personal feedback history
   - **Govt Schemes**: 10 real government schemes (PM Awas Yojana, Ayushman Bharat, PM Kisan, Ujjwala, Sukanya Samriddhi, PM Vishwakarma, Atal Pension, PM Surya Ghar, Mahtari Vandana, Stand Up India) with eligibility, benefits, step-by-step application guide, and required documents
-  - **Enhanced Dashboard**: 5 new colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback, Govt Schemes) added between main services and bottom tiles
+  - **Enhanced Dashboard**: 9 colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback, Govt Schemes, Certificates, RTI, Nearby Services, Property Tax) added between main services and bottom tiles
+  - **Certificate Applications**: Apply for 8 govt certificates (Birth, Income, Caste, Domicile, Marriage, Death, Residence, Character) with fee calculation, tracking, document generation
+  - **RTI Filing**: Digital Right to Information applications to 12 departments with BPL exemption, 30-day response tracking
+  - **Nearby Services**: Directory of 19+ locations in Raipur (hospitals, police stations, banks, post offices, schools, gas agencies, ration shops) with contact info, hours, addresses
+  - **Property Tax Calculator**: Estimate annual property tax based on property type, zone, area, floor, age with breakdown and early payment discount
 - **Backend Integration**: All service pages now connected to real APIs
   - ElectricityService, GasService, MunicipalService form submissions → POST /api/complaints
   - ServiceRequest form → POST /api/complaints with real complaint IDs
@@ -45,6 +49,8 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - **announcements** - Government notices with categories, priority, date filtering
 - **emergencyLogs** - Emergency service alert records
 - **govtSchemes** - Government schemes with eligibility, benefits, apply steps, documents
+- **certificateApplications** - 8 types of certificate applications (birth, death, income, caste, domicile, marriage, residence, character) with tracking
+- **rtiApplications** - Right to Information applications to 12 departments with BPL exemption
 
 ## Key Files
 - `client/src/lib/faceUtils.ts` - Face detection, 5-step liveness verification, anti-spoof checks
@@ -56,6 +62,10 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - `client/src/pages/EmergencySOS.tsx` - Emergency services quick access
 - `client/src/pages/FeedbackPage.tsx` - Service rating and feedback
 - `client/src/pages/GovtSchemes.tsx` - Government schemes with apply steps
+- `client/src/pages/CertificateApplication.tsx` - Apply for 8 govt certificates with tracking
+- `client/src/pages/RTIApplication.tsx` - File RTI applications with department selection
+- `client/src/pages/NearbyServices.tsx` - Directory of 19+ public facilities in Raipur
+- `client/src/pages/PropertyTaxCalc.tsx` - Property tax estimation calculator
 - `client/src/pages/Dashboard.tsx` - Main dashboard with all service tiles
 - `client/src/components/layout/KioskLayout.tsx` - Main layout with language/voice handling
 - `server/routes.ts` - API routes including all CRUD endpoints
@@ -74,6 +84,16 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - `/api/schemes` - GET (list all active schemes, filter by category)
 - `/api/schemes/:id` - GET (single scheme details)
 - `/api/dashboard/stats/:userId` - Unified dashboard statistics
+- `/api/certificates/types` - List 8 certificate types with fees and processing time
+- `/api/certificates/apply` - POST submit certificate application
+- `/api/certificates/my` - GET user's certificate applications
+- `/api/certificates/track/:applicationId` - Track application by ID
+- `/api/rti/departments` - List 12 government departments for RTI
+- `/api/rti/apply` - POST file RTI application
+- `/api/rti/my` - GET user's RTI applications
+- `/api/rti/track/:rtiId` - Track RTI by ID
+- `/api/nearby-services` - GET directory of 19+ public facilities with category/search filter
+- `/api/tax/calculate` - POST calculate property tax by zone, type, area, age
 
 ## Running
 - Workflow: `cd Suvidha-Kioskzip/Suvidha-Kiosk && npm run dev`

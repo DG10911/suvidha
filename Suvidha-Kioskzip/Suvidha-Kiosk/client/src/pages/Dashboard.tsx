@@ -4,7 +4,7 @@ import {
   ChevronRight, Bell, FolderOpen, User, MessageSquare, Shield, Clock,
   CreditCard, Wrench, CircleAlert, Landmark, Type, Wallet,
   Receipt, BellRing, CheckCircle2, Timer, Calendar, Megaphone, ShieldAlert, Star,
-  TrendingUp, Ticket, IndianRupee, BadgeCheck
+  TrendingUp, Ticket, IndianRupee, BadgeCheck, ScrollText, Scale, MapPin, Calculator
 } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -148,6 +148,38 @@ const newFeatureTiles = [
     icon: BadgeCheck,
     color: "bg-green-600",
     href: "/dashboard/schemes",
+  },
+  {
+    id: "certificates",
+    title: "Certificates",
+    desc: "Apply for certificates",
+    icon: ScrollText,
+    color: "bg-teal-500",
+    href: "/dashboard/certificates",
+  },
+  {
+    id: "rti",
+    title: "RTI Filing",
+    desc: "Right to Information",
+    icon: Scale,
+    color: "bg-amber-600",
+    href: "/dashboard/rti",
+  },
+  {
+    id: "nearby",
+    title: "Nearby Services",
+    desc: "Find hospitals, banks",
+    icon: MapPin,
+    color: "bg-rose-500",
+    href: "/dashboard/nearby",
+  },
+  {
+    id: "tax-calculator",
+    title: "Property Tax",
+    desc: "Calculate your tax",
+    icon: Calculator,
+    color: "bg-emerald-600",
+    href: "/dashboard/tax-calculator",
   },
 ];
 

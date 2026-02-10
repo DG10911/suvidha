@@ -23,6 +23,10 @@ import Announcements from "@/pages/Announcements";
 import EmergencySOS from "@/pages/EmergencySOS";
 import FeedbackPage from "@/pages/FeedbackPage";
 import GovtSchemes from "@/pages/GovtSchemes";
+import CertificateApplication from "@/pages/CertificateApplication";
+import RTIApplication from "@/pages/RTIApplication";
+import NearbyServices from "@/pages/NearbyServices";
+import PropertyTaxCalc from "@/pages/PropertyTaxCalc";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -40,6 +44,10 @@ function Router() {
       <Route path="/dashboard/emergency" component={EmergencySOS} />
       <Route path="/dashboard/feedback" component={FeedbackPage} />
       <Route path="/dashboard/schemes" component={GovtSchemes} />
+      <Route path="/dashboard/certificates" component={CertificateApplication} />
+      <Route path="/dashboard/rti" component={RTIApplication} />
+      <Route path="/dashboard/nearby" component={NearbyServices} />
+      <Route path="/dashboard/tax-calculator" component={PropertyTaxCalc} />
       <Route path="/service/electricity" component={ElectricityService} />
       <Route path="/service/gas" component={GasService} />
       <Route path="/service/municipal" component={MunicipalService} />
