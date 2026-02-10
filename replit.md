@@ -4,6 +4,12 @@
 Suvidha Kiosk is a digital citizen services kiosk application built with React (Vite) frontend and Express backend. It provides civic services including face-based login, mobile login, QR code scanning, and citizen registration via Aadhaar.
 
 ## Recent Changes (Feb 2026)
+- **Backend Integration**: All service pages now connected to real APIs
+  - ElectricityService, GasService, MunicipalService form submissions → POST /api/complaints
+  - ServiceRequest form → POST /api/complaints with real complaint IDs
+  - PaymentFlow → GET /api/wallet/:userId (real balance) + POST /api/wallet/:userId/pay (wallet payments)
+  - Service pages auto-fetch linked consumer IDs from /api/linked-services/:userId
+  - Fixed userId propagation: kioskStore/ComplaintCenter now use localStorage prefs (was broken sessionStorage)
 - Liveness pipeline simplified to 5 core anti-spoof steps only (no blink/motion required)
 - Steps: face detection (5 frames) → texture analysis → screen/photo detection → eye openness → identity consistency
 - Blink detection and motion detection fully removed from codebase

@@ -1,4 +1,5 @@
 modules = ["nodejs-20", "python-3.11", "postgresql-16"]
+
 [nix]
 channel = "stable-25_05"
 packages = ["unzip"]
@@ -14,6 +15,13 @@ runButton = "Project"
 name = "Project"
 mode = "parallel"
 author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd Suvidha-Kioskzip/Suvidha-Kiosk && npm install && npm run dev"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
@@ -34,3 +42,7 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[deployment]
+run = ["sh", "-c", "cd Suvidha-Kioskzip/Suvidha-Kiosk && npm install && npm run dev"]
+deploymentTarget = "cloudrun"

@@ -46,6 +46,8 @@ export default function GasService() {
   const [loading, setLoading] = useState(false);
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [lang, setLang] = useState(() => loadPreferences().language);
+  const [complaintId, setComplaintId] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   const [gasId, setGasId] = useState("");
   const [gasIdValid, setGasIdValid] = useState(false);
@@ -62,6 +64,21 @@ export default function GasService() {
     return () => window.removeEventListener("prefs-changed", handler);
   }, []);
 
+  useEffect(() => {
+    const userId = loadPreferences().userId || "1";
+    fetch(`/api/linked-services/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.services) {
+          const gasService = data.services.find((s: any) => s.serviceName === "Gas");
+          if (gasService && gasService.consumerId) {
+            setGasId(gasService.consumerId);
+          }
+        }
+      })
+      .catch(err => console.error("Failed to fetch linked services:", err));
+  }, []);
+
   const resetToMenu = () => {
     setAction("menu");
     setBookingStep("select");
@@ -72,12 +89,50 @@ export default function GasService() {
     setSubsidyData(null);
   };
 
-  const handleFormSubmit = () => {
+  const handleFormSubmit = async () => {
     setLoading(true);
-    setTimeout(() => {
+    setSubmitError("");
+    try {
+      const userId = loadPreferences().userId || "1";
+      let service = "Gas";
+      let category = "";
+      let description = "";
+      let urgency = "medium";
+
+      switch (action) {
+        case "leakage":
+          category = "Leakage Emergency";
+          description = leakageForm.description;
+          urgency = "high";
+          break;
+        case "new_connection":
+          category = "New Connection";
+          description = `New gas connection for ${newConnForm.name} at ${newConnForm.address}`;
+          break;
+        case "cylinder_booking":
+          category = "Cylinder Booking";
+          description = `Booking ${quantity}x ${selectedCylinder?.name}`;
+          break;
+      }
+
+      const res = await fetch("/api/complaints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, service, category, description, urgency }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComplaintId(data.complaint.complaintId);
+        setFormSubmitted(true);
+      } else {
+        setSubmitError(data.message || "Failed to submit request. Please try again.");
+      }
+    } catch (err) {
+      console.error("Failed to submit complaint:", err);
+      setSubmitError("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
-      setFormSubmitted(true);
-    }, 2000);
+    }
   };
 
   const handleSubsidyLookup = () => {
@@ -111,7 +166,7 @@ export default function GasService() {
           </div>
           <div>
             <h2 className="text-3xl font-bold mb-2">{t("request_submitted", lang)}</h2>
-            <p className="text-xl text-muted-foreground">{t("complaint_id", lang)} <span className="font-mono font-bold">#SUV-{Math.floor(1000 + Math.random() * 9000)}</span></p>
+            <p className="text-xl text-muted-foreground">{t("complaint_id", lang)} <span className="font-mono font-bold">#{complaintId}</span></p>
           </div>
           <p className="text-lg text-muted-foreground max-w-sm">{t("sms_updates", lang)}</p>
           <div className="flex gap-4">
@@ -437,6 +492,13 @@ export default function GasService() {
   return (
     <KioskLayout>
       <div className="h-full flex flex-col max-w-4xl mx-auto w-full">
+        {submitError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+            <span>{submitError}</span>
+            <Button variant="ghost" size="sm" className="ml-auto text-red-700" onClick={() => setSubmitError("")}>Dismiss</Button>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div key={`${action}-${bookingStep}-${formSubmitted}-${gasIdValid}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex-1">
             {renderContent()}

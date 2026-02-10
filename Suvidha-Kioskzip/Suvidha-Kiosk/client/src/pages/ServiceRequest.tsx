@@ -33,6 +33,9 @@ export default function ServiceRequest() {
     urgency: "normal"
   });
   const [lang, setLang] = useState(() => loadPreferences().language);
+  const [complaintId, setComplaintId] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -48,6 +51,37 @@ export default function ServiceRequest() {
   const nextStep = () => setCurrentStep(p => Math.min(steps.length - 1, p + 1));
   const prevStep = () => setCurrentStep(p => Math.max(0, p - 1));
 
+  const handleSubmitComplaint = async () => {
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const userId = loadPreferences().userId || "1";
+      const res = await fetch("/api/complaints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          service: type,
+          category: formData.category,
+          description: formData.description,
+          urgency: formData.urgency,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComplaintId(data.complaint.complaintId);
+        nextStep();
+      } else {
+        setSubmitError(data.message || "Failed to submit complaint");
+      }
+    } catch (err) {
+      console.error("Failed to submit complaint:", err);
+      setSubmitError("Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handlePrintReceipt = () => {
     const printDiv = document.createElement("div");
     printDiv.className = "print-area";
@@ -59,7 +93,7 @@ export default function ServiceRequest() {
         </div>
         <div style="margin-bottom: 12px;">
           <p style="font-size: 12px; color: #666; margin: 0;">${t("complaint_id", lang)}</p>
-          <p style="font-size: 18px; font-weight: bold; margin: 2px 0 0 0;">#SUV-2024-8892</p>
+          <p style="font-size: 18px; font-weight: bold; margin: 2px 0 0 0;">#${complaintId}</p>
         </div>
         <div style="margin-bottom: 12px;">
           <p style="font-size: 12px; color: #666; margin: 0;">${t("service_type", lang)}</p>
@@ -202,7 +236,7 @@ export default function ServiceRequest() {
             </div>
             <div>
               <h2 className="text-3xl font-bold mb-2">{t("complaint_registered", lang)}</h2>
-              <p className="text-xl text-muted-foreground">{t("complaint_id", lang)} <span className="font-mono font-bold text-foreground">#SUV-2024-8892</span></p>
+              <p className="text-xl text-muted-foreground">{t("complaint_id", lang)} <span className="font-mono font-bold text-foreground">#{complaintId}</span></p>
             </div>
             <div className="p-4 bg-secondary/50 rounded-xl max-w-md">
               <p className="text-lg">{t("sms_updates", lang)}</p>
@@ -289,10 +323,10 @@ export default function ServiceRequest() {
              <Button 
                 size="lg" 
                 className="h-16 px-12 text-xl rounded-2xl gap-2 shadow-lg shadow-primary/20"
-                onClick={currentStep === 2 ? nextStep : nextStep}
-                disabled={currentStep === 0 && !formData.category}
+                onClick={currentStep === 2 ? handleSubmitComplaint : nextStep}
+                disabled={(currentStep === 0 && !formData.category) || submitting}
               >
-                {currentStep === 2 ? t("submit_complaint", lang) : t("next_step", lang)}
+                {submitting ? t("submit_complaint", lang) + "..." : currentStep === 2 ? t("submit_complaint", lang) : t("next_step", lang)}
                 <ArrowRight className="w-6 h-6" />
               </Button>
           </div>

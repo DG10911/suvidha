@@ -251,7 +251,7 @@ export default function ComplaintCenter() {
 
   const handleSubmitComplaint = async () => {
     setSubmitting(true);
-    const userId = sessionStorage.getItem("userId") || "1";
+    const userId = loadPreferences().userId || "1";
     const serviceLabel = serviceCategories.find(c => c.id === selectedService)?.label || selectedService;
     try {
       const res = await fetch("/api/complaints", {

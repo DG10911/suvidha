@@ -1,3 +1,5 @@
+import { loadPreferences } from "@/lib/userPreferences";
+
 const STORE_KEY = "suvidha_kiosk_store";
 
 export interface ServiceRequest {
@@ -365,7 +367,7 @@ export function toggleLinkedService(serviceId: string, connected: boolean, consu
 }
 
 // --- API-backed async functions ---
-const getUserId = () => sessionStorage.getItem("userId") || "1";
+const getUserId = () => loadPreferences().userId || "1";
 
 export async function fetchNotificationsFromApi(): Promise<KioskNotification[]> {
   try {

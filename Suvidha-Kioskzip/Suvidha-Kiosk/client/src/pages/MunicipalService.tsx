@@ -41,6 +41,8 @@ export default function MunicipalService() {
   const [waterIdFound, setWaterIdFound] = useState(false);
   const [waterId, setWaterId] = useState("");
   const [lang, setLang] = useState(() => loadPreferences().language);
+  const [complaintId, setComplaintId] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   const [leakageForm, setLeakageForm] = useState({ location: "", description: "", severity: "" });
   const [newConnForm, setNewConnForm] = useState({ name: "", address: "", phone: "", property: "residential" });
@@ -56,6 +58,21 @@ export default function MunicipalService() {
     return () => window.removeEventListener("prefs-changed", handler);
   }, []);
 
+  useEffect(() => {
+    const userId = loadPreferences().userId || "1";
+    fetch(`/api/linked-services/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.services) {
+          const waterService = data.services.find((s: any) => s.serviceName === "Water");
+          if (waterService && waterService.consumerId) {
+            setWaterId(waterService.consumerId);
+          }
+        }
+      })
+      .catch(err => console.error("Failed to fetch linked services:", err));
+  }, []);
+
   const resetAll = () => {
     setWaterAction("menu");
     setWasteAction("menu");
@@ -66,12 +83,56 @@ export default function MunicipalService() {
     setWaterId("");
   };
 
-  const handleFormSubmit = () => {
+  const handleFormSubmit = async () => {
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const userId = loadPreferences().userId || "1";
+      let service = "Municipal";
+      let category = "";
+      let description = "";
+      let urgency = "medium";
+
+      if (tab === "water") {
+        switch (waterAction) {
+          case "leakage":
+            category = "Water Leakage";
+            description = leakageForm.description;
+            break;
+          case "new_connection":
+            category = "New Water Connection";
+            description = `New water connection for ${newConnForm.name}`;
+            break;
+          case "quality":
+            category = "Water Quality";
+            description = "Water quality complaint";
+            break;
+        }
+      } else if (tab === "waste") {
+        category = `Waste - ${wasteAction}`;
+        description = wasteForm.description;
+      } else if (tab === "infrastructure") {
+        category = `Infrastructure - ${infraAction}`;
+        description = infraForm.description;
+      }
+
+      const res = await fetch("/api/complaints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, service, category, description, urgency }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComplaintId(data.complaint.complaintId);
+        setFormSubmitted(true);
+      } else {
+        setSubmitError(data.message || "Failed to submit request. Please try again.");
+      }
+    } catch (err) {
+      console.error("Failed to submit complaint:", err);
+      setSubmitError("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
-      setFormSubmitted(true);
-    }, 2000);
+    }
   };
 
   const handleWaterLookup = () => {
@@ -98,7 +159,7 @@ export default function MunicipalService() {
             </div>
             <div>
               <h2 className="text-3xl font-bold mb-2">{t("request_submitted", lang)}</h2>
-              <p className="text-xl text-muted-foreground">{t("complaint_id", lang)} <span className="font-mono font-bold">#SUV-{Math.floor(1000 + Math.random() * 9000)}</span></p>
+              <p className="text-xl text-muted-foreground">{t("complaint_id", lang)} <span className="font-mono font-bold">#{complaintId}</span></p>
             </div>
             <p className="text-lg text-muted-foreground max-w-sm">{t("sms_updates", lang)}</p>
             <div className="flex gap-4">
@@ -336,6 +397,13 @@ export default function MunicipalService() {
   return (
     <KioskLayout>
       <div className="h-full flex flex-col max-w-4xl mx-auto w-full space-y-5">
+        {submitError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+            <span>{submitError}</span>
+            <Button variant="ghost" size="sm" className="ml-auto text-red-700" onClick={() => setSubmitError("")}>Dismiss</Button>
+          </div>
+        )}
         <div className="text-center">
           <div className="w-14 h-14 bg-teal-100 rounded-2xl flex items-center justify-center mx-auto mb-2 text-teal-600">
             <Landmark className="w-7 h-7" />

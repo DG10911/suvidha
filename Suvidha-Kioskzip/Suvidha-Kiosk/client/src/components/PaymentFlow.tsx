@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Smartphone, Banknote, Wallet, CheckCircle2, ArrowRight, 
-  QrCode, Loader2, ArrowLeft, Receipt
+  QrCode, Loader2, ArrowLeft, Receipt, AlertTriangle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { t, type TranslationKey } from "@/lib/translations";
+import { loadPreferences } from "@/lib/userPreferences";
 
 interface PaymentFlowProps {
   amount: number;
@@ -17,19 +18,64 @@ interface PaymentFlowProps {
 }
 
 type PaymentMethod = "upi" | "cash" | "wallet" | null;
-type PaymentStep = "method" | "processing" | "success";
+type PaymentStep = "method" | "processing" | "success" | "failed";
 
 export default function PaymentFlow({ amount, billDetails, lang, onComplete, onBack }: PaymentFlowProps) {
   const [method, setMethod] = useState<PaymentMethod>(null);
   const [step, setStep] = useState<PaymentStep>("method");
   const [upiId, setUpiId] = useState("");
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(true);
+  const [payError, setPayError] = useState("");
+  const [txnId, setTxnId] = useState(`TXN${Date.now().toString(36).toUpperCase()}`);
 
-  const handlePay = () => {
+  useEffect(() => {
+    const fetchBalance = async () => {
+      const userId = loadPreferences().userId || "1";
+      try {
+        const res = await fetch(`/api/wallet/${userId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setWalletBalance(parseFloat(data.balance || "0"));
+        }
+      } catch {}
+      setLoadingBalance(false);
+    };
+    fetchBalance();
+  }, []);
+
+  const handlePay = async () => {
     setStep("processing");
-    setTimeout(() => setStep("success"), 2500);
-  };
+    setPayError("");
+    const userId = loadPreferences().userId || "1";
 
-  const txnId = `TXN${Date.now().toString(36).toUpperCase()}`;
+    if (method === "wallet") {
+      try {
+        const res = await fetch(`/api/wallet/${userId}/pay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: amount.toString(),
+            description: billDetails.map(d => `${d.label}: ${d.value}`).join(", "),
+            referenceId: txnId,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setWalletBalance(parseFloat(data.balance));
+          setStep("success");
+        } else {
+          setPayError(data.message || "Payment failed");
+          setStep("failed");
+        }
+      } catch {
+        setPayError("Payment failed. Please try again.");
+        setStep("failed");
+      }
+    } else {
+      setTimeout(() => setStep("success"), 2500);
+    }
+  };
 
   const handlePrintReceipt = () => {
     const printDiv = document.createElement("div");
@@ -70,6 +116,9 @@ export default function PaymentFlow({ amount, billDetails, lang, onComplete, onB
     window.print();
     document.body.removeChild(printDiv);
   };
+
+  const balanceDisplay = walletBalance !== null ? `₹${walletBalance.toLocaleString("en-IN")}` : "...";
+  const insufficientBalance = walletBalance !== null && walletBalance < amount;
 
   return (
     <AnimatePresence mode="wait">
@@ -130,13 +179,15 @@ export default function PaymentFlow({ amount, billDetails, lang, onComplete, onB
                 onClick={() => setMethod("wallet")}
                 className={`p-5 rounded-2xl border-2 text-center transition-all ${
                   method === "wallet" ? "border-primary bg-primary/5 shadow-lg" : "border-border bg-white hover:border-primary/50"
-                }`}
+                } ${insufficientBalance ? "opacity-60" : ""}`}
               >
                 <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mx-auto mb-3">
                   <Wallet className="w-7 h-7 text-blue-600" />
                 </div>
                 <p className="font-bold text-base">{t("suvidha_wallet_pay", lang)}</p>
-                <p className="text-xs text-muted-foreground mt-1">₹2,450 {t("balance", lang)}</p>
+                <p className={`text-xs mt-1 ${insufficientBalance ? "text-red-500 font-bold" : "text-muted-foreground"}`}>
+                  {loadingBalance ? "..." : balanceDisplay} {t("balance", lang)}
+                </p>
               </button>
             </div>
           </div>
@@ -181,18 +232,28 @@ export default function PaymentFlow({ amount, billDetails, lang, onComplete, onB
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
-              className="bg-blue-50 rounded-2xl p-6 border border-blue-200 space-y-2"
+              className={`rounded-2xl p-6 border space-y-2 ${insufficientBalance ? "bg-red-50 border-red-200" : "bg-blue-50 border-blue-200"}`}
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-blue-800">{t("suvidha_wallet_pay", lang)}</p>
-                  <p className="text-sm text-blue-600">{t("wallet_balance", lang)}: ₹2,450</p>
+              {insufficientBalance ? (
+                <div className="flex items-center gap-3 text-red-700">
+                  <AlertTriangle className="w-6 h-6 flex-shrink-0" />
+                  <div>
+                    <p className="font-bold">Insufficient Balance</p>
+                    <p className="text-sm">Your wallet has {balanceDisplay} but ₹{amount.toLocaleString("en-IN")} is required. Please add funds first.</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">{t("after_payment", lang)}</p>
-                  <p className="font-bold text-blue-800">₹{(2450 - amount).toLocaleString("en-IN")}</p>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-blue-800">{t("suvidha_wallet_pay", lang)}</p>
+                    <p className="text-sm text-blue-600">{t("wallet_balance", lang)}: {balanceDisplay}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">{t("after_payment", lang)}</p>
+                    <p className="font-bold text-blue-800">₹{walletBalance !== null ? (walletBalance - amount).toLocaleString("en-IN") : "..."}</p>
+                  </div>
                 </div>
-              </div>
+              )}
             </motion.div>
           )}
 
@@ -205,7 +266,7 @@ export default function PaymentFlow({ amount, billDetails, lang, onComplete, onB
               size="lg"
               className="h-14 px-10 text-lg rounded-2xl gap-2 shadow-lg shadow-primary/20"
               onClick={handlePay}
-              disabled={!method || (method === "upi" && !upiId)}
+              disabled={!method || (method === "upi" && !upiId) || (method === "wallet" && insufficientBalance)}
             >
               {t("pay_now", lang)} ₹{amount.toLocaleString("en-IN")}
               <ArrowRight className="w-5 h-5" />
@@ -240,6 +301,31 @@ export default function PaymentFlow({ amount, billDetails, lang, onComplete, onB
             <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
             <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
             <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
+        </motion.div>
+      )}
+
+      {step === "failed" && (
+        <motion.div
+          key="failed"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center justify-center py-10 space-y-8"
+        >
+          <div className="w-28 h-28 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+            <AlertTriangle className="w-14 h-14" />
+          </div>
+          <div className="text-center">
+            <h2 className="text-3xl font-bold">Payment Failed</h2>
+            <p className="text-xl text-muted-foreground mt-2">{payError}</p>
+          </div>
+          <div className="flex gap-4">
+            <Button className="h-14 px-8 text-lg rounded-xl" onClick={() => { setStep("method"); setPayError(""); }}>
+              Try Again
+            </Button>
+            <Button variant="outline" className="h-14 px-8 text-lg rounded-xl" onClick={onBack}>
+              {t("back", lang)}
+            </Button>
           </div>
         </motion.div>
       )}
