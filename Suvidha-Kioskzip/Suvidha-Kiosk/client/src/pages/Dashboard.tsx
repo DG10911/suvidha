@@ -4,7 +4,8 @@ import {
   ChevronRight, Bell, FolderOpen, User, MessageSquare, Shield, Clock,
   CreditCard, Wrench, CircleAlert, Landmark, Type, Wallet,
   Receipt, BellRing, CheckCircle2, Timer, Calendar, Megaphone, ShieldAlert, Star,
-  TrendingUp, Ticket, IndianRupee, BadgeCheck, ScrollText, Scale, MapPin, Calculator
+  TrendingUp, Ticket, IndianRupee, BadgeCheck, ScrollText, Scale, MapPin, Calculator,
+  Droplet, AlertOctagon, PiggyBank, FolderLock
 } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -180,6 +181,46 @@ const newFeatureTiles = [
     icon: Calculator,
     color: "bg-emerald-600",
     href: "/dashboard/tax-calculator",
+  },
+  {
+    id: "blood-banks",
+    title: "Blood Banks",
+    desc: "Find blood availability",
+    icon: Droplet,
+    color: "bg-red-700",
+    href: "/dashboard/blood-banks",
+  },
+  {
+    id: "grievance",
+    title: "Grievance Portal",
+    desc: "File public grievance",
+    icon: AlertOctagon,
+    color: "bg-orange-600",
+    href: "/dashboard/grievance",
+  },
+  {
+    id: "pension",
+    title: "Pension Tracker",
+    desc: "Check pension status",
+    icon: PiggyBank,
+    color: "bg-purple-600",
+    href: "/dashboard/pension",
+  },
+  {
+    id: "digilocker",
+    title: "DigiLocker",
+    desc: "Secure document vault",
+    icon: FolderLock,
+    color: "bg-blue-700",
+    href: "/dashboard/digilocker",
+  },
+  {
+    id: "water-bill",
+    title: "Water Bill",
+    desc: "View & pay water bills",
+    icon: Droplets,
+    color: "bg-cyan-600",
+    href: "/dashboard/water-bill",
   },
 ];
 

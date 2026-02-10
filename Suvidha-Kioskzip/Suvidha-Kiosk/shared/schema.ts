@@ -218,9 +218,85 @@ export const rtiApplications = pgTable("rti_applications", {
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const grievances = pgTable("grievances", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  grievanceId: text("grievance_id").notNull().unique(),
+  department: text("department").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+  applicantName: text("applicant_name").notNull(),
+  applicantPhone: text("applicant_phone"),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("registered"),
+  assignedOfficer: text("assigned_officer"),
+  expectedResolution: text("expected_resolution"),
+  resolution: text("resolution"),
+  escalated: boolean("escalated").default(false),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const pensionRecords = pgTable("pension_records", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  pensionId: text("pension_id").notNull().unique(),
+  pensionerName: text("pensioner_name").notNull(),
+  scheme: text("scheme").notNull(),
+  monthlyAmount: numeric("monthly_amount", { precision: 12, scale: 2 }).notNull(),
+  bankAccount: text("bank_account"),
+  status: text("status").notNull().default("active"),
+  lastPaymentDate: text("last_payment_date"),
+  nextPaymentDate: text("next_payment_date"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const pensionPayments = pgTable("pension_payments", {
+  id: serial("id").primaryKey(),
+  pensionId: text("pension_id").notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  month: text("month").notNull(),
+  status: text("status").notNull().default("paid"),
+  transactionId: text("transaction_id"),
+  paidAt: timestamp("paid_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const digiLocker = pgTable("digi_locker", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  documentName: text("document_name").notNull(),
+  documentType: text("document_type").notNull(),
+  documentNumber: text("document_number"),
+  issuedBy: text("issued_by"),
+  issuedDate: text("issued_date"),
+  expiryDate: text("expiry_date"),
+  verified: boolean("verified").default(false),
+  fileData: text("file_data"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const waterBills = pgTable("water_bills", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  connectionId: text("connection_id").notNull(),
+  consumerName: text("consumer_name").notNull(),
+  billMonth: text("bill_month").notNull(),
+  unitsConsumed: integer("units_consumed").notNull(),
+  billAmount: numeric("bill_amount", { precision: 12, scale: 2 }).notNull(),
+  dueDate: text("due_date").notNull(),
+  status: text("status").notNull().default("unpaid"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export type GovtScheme = typeof govtSchemes.$inferSelect;
 export type CertificateApplication = typeof certificateApplications.$inferSelect;
 export type RtiApplication = typeof rtiApplications.$inferSelect;
+export type Grievance = typeof grievances.$inferSelect;
+export type PensionRecord = typeof pensionRecords.$inferSelect;
+export type PensionPayment = typeof pensionPayments.$inferSelect;
+export type DigiLockerDoc = typeof digiLocker.$inferSelect;
+export type WaterBill = typeof waterBills.$inferSelect;
 export type FaceProfile = typeof faceProfiles.$inferSelect;
 export type QrToken = typeof qrTokens.$inferSelect;
 export type Complaint = typeof complaints.$inferSelect;

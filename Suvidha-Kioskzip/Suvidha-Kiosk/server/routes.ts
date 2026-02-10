@@ -23,6 +23,11 @@ import {
   govtSchemes,
   certificateApplications,
   rtiApplications,
+  grievances,
+  pensionRecords,
+  pensionPayments,
+  digiLocker,
+  waterBills,
 } from "../shared/schema";
 import { eq, desc, and, sql, gte, lte, avg, count } from "drizzle-orm";
 import { registerAudioRoutes } from "./replit_integrations/audio/index.js";
@@ -1891,6 +1896,444 @@ export async function registerRoutes(
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message });
     }
+  });
+
+  // ==================== BLOOD BANK DIRECTORY ====================
+
+  const bloodBanks = [
+    { name: "State Blood Bank, Raipur", address: "DKS Hospital Campus, Rajbandha Maidan, Raipur", phone: "0771-2523100", type: "Government Blood Bank", hours: "24/7", lat: 21.2362, lng: 81.6314, bloodGroups: { "A+": 45, "A-": 8, "B+": 52, "B-": 5, "O+": 60, "O-": 12, "AB+": 18, "AB-": 3 } },
+    { name: "Red Cross Blood Bank", address: "Civil Lines, Near Collectorate, Raipur", phone: "0771-2222100", type: "Red Cross Society", hours: "08:00-20:00", lat: 21.2525, lng: 81.6285, bloodGroups: { "A+": 30, "A-": 6, "B+": 38, "B-": 4, "O+": 42, "O-": 8, "AB+": 12, "AB-": 2 } },
+    { name: "AIIMS Blood Centre", address: "AIIMS Raipur, Tatibandh, GE Road", phone: "0771-2572333", type: "Government (AIIMS)", hours: "24/7", lat: 21.2514, lng: 81.6296, bloodGroups: { "A+": 65, "A-": 15, "B+": 70, "B-": 10, "O+": 80, "O-": 20, "AB+": 25, "AB-": 5 } },
+    { name: "Balaji Blood Bank", address: "Pandri, Near Bus Stand, Raipur", phone: "0771-2225800", type: "Private Licensed", hours: "09:00-21:00", lat: 21.2300, lng: 81.6330, bloodGroups: { "A+": 20, "A-": 3, "B+": 25, "B-": 2, "O+": 30, "O-": 5, "AB+": 8, "AB-": 1 } },
+    { name: "Ramkrishna Care Hospital Blood Bank", address: "Aurobindo Enclave, Pachpedi Naka, Raipur", phone: "0771-4044444", type: "Private Hospital", hours: "24/7", lat: 21.2410, lng: 81.6450, bloodGroups: { "A+": 35, "A-": 7, "B+": 40, "B-": 6, "O+": 50, "O-": 10, "AB+": 15, "AB-": 3 } },
+    { name: "Shree Narayana Hospital Blood Bank", address: "Devendra Nagar, Raipur", phone: "0771-2442200", type: "Private Hospital", hours: "24/7", lat: 21.2400, lng: 81.6420, bloodGroups: { "A+": 28, "A-": 5, "B+": 32, "B-": 3, "O+": 38, "O-": 7, "AB+": 10, "AB-": 2 } },
+  ];
+
+  app.get("/api/blood-banks", (req: Request, res: Response) => {
+    const bloodGroup = req.query.bloodGroup as string;
+    let result = bloodBanks;
+    if (bloodGroup && bloodGroup !== "all") {
+      result = result.filter(b => (b.bloodGroups as any)[bloodGroup] > 0);
+    }
+    res.json({ success: true, bloodBanks: result });
+  });
+
+  // ==================== PUBLIC GRIEVANCE PORTAL ====================
+
+  const grievanceDepartments = [
+    { id: "municipal", name: "Municipal Corporation", officer: "Sh. R.K. Sharma" },
+    { id: "water_supply", name: "PHE - Water Supply", officer: "Sh. A.K. Verma" },
+    { id: "electricity", name: "CSPDCL - Electricity", officer: "Sh. M.P. Singh" },
+    { id: "health", name: "Health Department", officer: "Dr. S.K. Gupta" },
+    { id: "education", name: "Education Department", officer: "Sh. P.R. Sahu" },
+    { id: "transport", name: "Transport / RTO", officer: "Sh. V.K. Pandey" },
+    { id: "revenue", name: "Revenue Department", officer: "Sh. K.L. Dhritlahare" },
+    { id: "police", name: "Police Department", officer: "Sh. S.P. Tiwari" },
+    { id: "food_civil", name: "Food & Civil Supplies", officer: "Sh. N.K. Markam" },
+    { id: "panchayat", name: "Panchayat & Rural Dev.", officer: "Sh. D.K. Soni" },
+    { id: "social_welfare", name: "Social Welfare Dept.", officer: "Sh. B.R. Netam" },
+    { id: "public_works", name: "Public Works Dept (PWD)", officer: "Sh. H.S. Dewangan" },
+  ];
+
+  app.get("/api/grievances/departments", (_req: Request, res: Response) => {
+    res.json({ success: true, departments: grievanceDepartments });
+  });
+
+  app.post("/api/grievances/file", async (req: Request, res: Response) => {
+    try {
+      const { userId, department, subject, description, applicantName, applicantPhone, priority } = req.body;
+      if (!department || !subject || !description || !applicantName) {
+        res.status(400).json({ success: false, message: "All fields are required" });
+        return;
+      }
+
+      const grievanceId = `GRV-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+      const dept = grievanceDepartments.find(d => d.id === department);
+
+      const resolutionDays = priority === "high" ? 7 : priority === "medium" ? 15 : 30;
+      const expectedDate = new Date();
+      expectedDate.setDate(expectedDate.getDate() + resolutionDays);
+
+      const [record] = await db.insert(grievances).values({
+        userId: userId || null,
+        grievanceId,
+        department,
+        subject,
+        description,
+        applicantName,
+        applicantPhone: applicantPhone || null,
+        priority: priority || "medium",
+        status: "registered",
+        assignedOfficer: dept?.officer || "To be assigned",
+        expectedResolution: expectedDate.toISOString().split("T")[0],
+      }).returning();
+
+      if (userId) {
+        await db.insert(notifications).values({
+          userId,
+          type: "info",
+          title: "Grievance Registered",
+          message: `Your grievance ${grievanceId} has been registered with ${dept?.name || department}. Expected resolution by ${expectedDate.toLocaleDateString("en-IN")}. Officer: ${dept?.officer || "TBA"}`,
+          read: false,
+        });
+      }
+
+      res.json({ success: true, grievance: record, grievanceId });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/grievances/my", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) { res.status(400).json({ success: false, message: "userId required" }); return; }
+      const items = await db.select().from(grievances).where(eq(grievances.userId, userId)).orderBy(desc(grievances.createdAt));
+      res.json({ success: true, grievances: items });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/grievances/track/:grievanceId", async (req: Request, res: Response) => {
+    try {
+      const [record] = await db.select().from(grievances).where(eq(grievances.grievanceId, req.params.grievanceId)).limit(1);
+      if (!record) { res.status(404).json({ success: false, message: "Grievance not found" }); return; }
+      res.json({ success: true, grievance: record });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== PENSION TRACKER ====================
+
+  const pensionSchemes = [
+    { id: "old_age", name: "Indira Gandhi National Old Age Pension", amount: "1000", eligibility: "Age 60+ years, BPL family" },
+    { id: "widow", name: "Indira Gandhi National Widow Pension", amount: "1000", eligibility: "Widowed women, BPL family" },
+    { id: "disability", name: "Indira Gandhi National Disability Pension", amount: "1000", eligibility: "Disabled persons (80%+), BPL" },
+    { id: "atal_pension", name: "Atal Pension Yojana", amount: "1000-5000", eligibility: "Age 18-40, bank account" },
+    { id: "cg_pension", name: "CG Social Security Pension", amount: "350-1000", eligibility: "CG residents, age 60+" },
+  ];
+
+  app.get("/api/pension/schemes", (_req: Request, res: Response) => {
+    res.json({ success: true, schemes: pensionSchemes });
+  });
+
+  app.get("/api/pension/check", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      const aadhaar = req.query.aadhaar as string;
+      if (!userId && !aadhaar) { res.status(400).json({ success: false, message: "userId or aadhaar required" }); return; }
+
+      let records;
+      if (userId) {
+        records = await db.select().from(pensionRecords).where(eq(pensionRecords.userId, userId));
+      } else {
+        const [user] = await db.select().from(users).where(eq(users.aadhaar, aadhaar!)).limit(1);
+        if (!user) { res.json({ success: true, records: [], message: "No pension records found for this Aadhaar" }); return; }
+        records = await db.select().from(pensionRecords).where(eq(pensionRecords.userId, user.id));
+      }
+
+      const recordsWithPayments = await Promise.all(records.map(async (r) => {
+        const payments = await db.select().from(pensionPayments).where(eq(pensionPayments.pensionId, r.pensionId)).orderBy(desc(pensionPayments.paidAt)).limit(6);
+        return { ...r, recentPayments: payments };
+      }));
+
+      res.json({ success: true, records: recordsWithPayments });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.post("/api/pension/register", async (req: Request, res: Response) => {
+    try {
+      const { userId, pensionerName, scheme, bankAccount } = req.body;
+      if (!pensionerName || !scheme) {
+        res.status(400).json({ success: false, message: "Name and scheme required" });
+        return;
+      }
+
+      const schemeInfo = pensionSchemes.find(s => s.id === scheme);
+      const pensionId = `PEN-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`;
+      const amount = schemeInfo?.amount.includes("-") ? "1000" : (schemeInfo?.amount || "1000");
+
+      const nextMonth = new Date();
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      nextMonth.setDate(1);
+
+      const [record] = await db.insert(pensionRecords).values({
+        userId: userId || null,
+        pensionId,
+        pensionerName,
+        scheme,
+        monthlyAmount: amount,
+        bankAccount: bankAccount || null,
+        status: "pending_verification",
+        nextPaymentDate: nextMonth.toISOString().split("T")[0],
+      }).returning();
+
+      if (userId) {
+        await db.insert(notifications).values({
+          userId,
+          type: "info",
+          title: "Pension Application Submitted",
+          message: `Your pension application ${pensionId} for ${schemeInfo?.name || scheme} has been submitted. Monthly amount: ₹${amount}. Verification in progress.`,
+          read: false,
+        });
+      }
+
+      res.json({ success: true, pension: record, pensionId });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== DIGI LOCKER ====================
+
+  const documentTypes = [
+    { id: "aadhaar", name: "Aadhaar Card", issuedBy: "UIDAI" },
+    { id: "pan", name: "PAN Card", issuedBy: "Income Tax Dept" },
+    { id: "voter_id", name: "Voter ID (EPIC)", issuedBy: "Election Commission" },
+    { id: "driving_license", name: "Driving License", issuedBy: "Transport Dept" },
+    { id: "ration_card", name: "Ration Card", issuedBy: "Food & Civil Supplies" },
+    { id: "birth_cert", name: "Birth Certificate", issuedBy: "Municipal Corporation" },
+    { id: "income_cert", name: "Income Certificate", issuedBy: "Revenue Dept" },
+    { id: "caste_cert", name: "Caste Certificate", issuedBy: "Revenue Dept" },
+    { id: "domicile_cert", name: "Domicile Certificate", issuedBy: "Revenue Dept" },
+    { id: "marksheet_10", name: "10th Marksheet", issuedBy: "Board of Education" },
+    { id: "marksheet_12", name: "12th Marksheet", issuedBy: "Board of Education" },
+    { id: "land_record", name: "Land Record (B1/Khasra)", issuedBy: "Revenue Dept" },
+    { id: "property_reg", name: "Property Registration", issuedBy: "Registration Dept" },
+    { id: "marriage_cert", name: "Marriage Certificate", issuedBy: "Municipal Corporation" },
+  ];
+
+  app.get("/api/digilocker/types", (_req: Request, res: Response) => {
+    res.json({ success: true, types: documentTypes });
+  });
+
+  app.get("/api/digilocker/my", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) { res.status(400).json({ success: false, message: "userId required" }); return; }
+      const docs = await db.select().from(digiLocker).where(eq(digiLocker.userId, userId)).orderBy(desc(digiLocker.createdAt));
+      res.json({ success: true, documents: docs });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.post("/api/digilocker/add", async (req: Request, res: Response) => {
+    try {
+      const { userId, documentType, documentName, documentNumber, issuedDate, expiryDate } = req.body;
+      if (!userId || !documentType || !documentName) {
+        res.status(400).json({ success: false, message: "userId, documentType, documentName required" });
+        return;
+      }
+
+      const typeInfo = documentTypes.find(t => t.id === documentType);
+
+      const [doc] = await db.insert(digiLocker).values({
+        userId,
+        documentName,
+        documentType,
+        documentNumber: documentNumber || null,
+        issuedBy: typeInfo?.issuedBy || null,
+        issuedDate: issuedDate || null,
+        expiryDate: expiryDate || null,
+        verified: false,
+      }).returning();
+
+      await db.insert(notifications).values({
+        userId,
+        type: "info",
+        title: "Document Added to DigiLocker",
+        message: `${documentName} has been added to your DigiLocker. Verification may take 24-48 hours.`,
+        read: false,
+      });
+
+      res.json({ success: true, document: doc });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.delete("/api/digilocker/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) { res.status(400).json({ success: false, message: "userId required" }); return; }
+
+      const [doc] = await db.select().from(digiLocker).where(eq(digiLocker.id, parseInt(req.params.id))).limit(1);
+      if (!doc) { res.status(404).json({ success: false, message: "Document not found" }); return; }
+      if (doc.userId !== userId) { res.status(403).json({ success: false, message: "Not authorized" }); return; }
+
+      await db.delete(digiLocker).where(eq(digiLocker.id, parseInt(req.params.id)));
+      res.json({ success: true, message: "Document removed" });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== WATER BILL & PAYMENT ====================
+
+  app.get("/api/water/bills", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      const connectionId = req.query.connectionId as string;
+
+      if (!userId && !connectionId) {
+        res.status(400).json({ success: false, message: "userId or connectionId required" });
+        return;
+      }
+
+      let bills;
+      if (connectionId) {
+        bills = await db.select().from(waterBills).where(eq(waterBills.connectionId, connectionId)).orderBy(desc(waterBills.createdAt));
+      } else {
+        bills = await db.select().from(waterBills).where(eq(waterBills.userId, userId)).orderBy(desc(waterBills.createdAt));
+      }
+
+      res.json({ success: true, bills });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.post("/api/water/generate-bill", async (req: Request, res: Response) => {
+    try {
+      const { userId, connectionId, consumerName } = req.body;
+      if (!connectionId || !consumerName) {
+        res.status(400).json({ success: false, message: "connectionId and consumerName required" });
+        return;
+      }
+
+      const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const generatedBills = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const billMonth = `${months[d.getMonth()]} ${d.getFullYear()}`;
+        const units = Math.floor(8 + Math.random() * 25);
+        let rate = 5;
+        if (units > 20) rate = 8;
+        else if (units > 15) rate = 6.5;
+        const billAmount = (units * rate + 50).toFixed(2);
+        const dueDate = new Date(d.getFullYear(), d.getMonth() + 1, 15).toISOString().split("T")[0];
+        const isPaid = i > 0;
+
+        generatedBills.push({
+          userId: userId || null,
+          connectionId,
+          consumerName,
+          billMonth,
+          unitsConsumed: units,
+          billAmount,
+          dueDate,
+          status: isPaid ? "paid" : "unpaid",
+        });
+      }
+
+      const existing = await db.select().from(waterBills).where(eq(waterBills.connectionId, connectionId)).limit(1);
+      if (existing.length === 0) {
+        await db.insert(waterBills).values(generatedBills);
+      }
+
+      const bills = await db.select().from(waterBills).where(eq(waterBills.connectionId, connectionId)).orderBy(desc(waterBills.createdAt));
+      res.json({ success: true, bills, connectionId });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.post("/api/water/pay", async (req: Request, res: Response) => {
+    try {
+      const { billId, userId } = req.body;
+      if (!billId) { res.status(400).json({ success: false, message: "billId required" }); return; }
+
+      const [bill] = await db.select().from(waterBills).where(eq(waterBills.id, billId)).limit(1);
+      if (!bill) { res.status(404).json({ success: false, message: "Bill not found" }); return; }
+      if (bill.status === "paid") { res.json({ success: true, message: "Bill already paid" }); return; }
+
+      if (userId) {
+        const [wallet] = await db.select().from(walletAccounts).where(eq(walletAccounts.userId, userId)).limit(1);
+        if (!wallet || parseFloat(wallet.balance) < parseFloat(bill.billAmount)) {
+          res.status(400).json({ success: false, message: "Insufficient wallet balance" });
+          return;
+        }
+
+        const newBal = (parseFloat(wallet.balance) - parseFloat(bill.billAmount)).toFixed(2);
+        await db.update(walletAccounts).set({ balance: newBal }).where(eq(walletAccounts.userId, userId));
+        await db.insert(walletTransactions).values({
+          userId,
+          type: "debit",
+          amount: bill.billAmount,
+          method: "wallet",
+          description: `Water Bill - ${bill.billMonth}`,
+          referenceId: `WB-${bill.id}`,
+          balanceAfter: newBal,
+        });
+      }
+
+      await db.update(waterBills).set({ status: "paid", paidAt: new Date() }).where(eq(waterBills.id, billId));
+
+      if (userId) {
+        await db.insert(notifications).values({
+          userId,
+          type: "success",
+          title: "Water Bill Paid",
+          message: `Water bill for ${bill.billMonth} of ₹${bill.billAmount} has been paid successfully.`,
+          read: false,
+        });
+
+        await db.insert(documents).values({
+          userId,
+          title: `Water Bill Receipt - ${bill.billMonth}`,
+          type: "receipt",
+          service: "Water Supply",
+          amount: `₹${bill.billAmount}`,
+          referenceId: `WB-${bill.id}`,
+          content: JSON.stringify({ billMonth: bill.billMonth, units: bill.unitsConsumed, amount: bill.billAmount, connectionId: bill.connectionId, paidAt: new Date().toISOString() }),
+        });
+      }
+
+      res.json({ success: true, message: "Bill paid successfully" });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.post("/api/water/calculate", (req: Request, res: Response) => {
+    const { units } = req.body;
+    const u = parseInt(units) || 0;
+
+    let rate = 5;
+    let slab = "0-15 units: ₹5/unit";
+    if (u > 25) { rate = 10; slab = "25+ units: ₹10/unit"; }
+    else if (u > 20) { rate = 8; slab = "20-25 units: ₹8/unit"; }
+    else if (u > 15) { rate = 6.5; slab = "15-20 units: ₹6.50/unit"; }
+
+    const waterCharge = u * rate;
+    const sewageCharge = waterCharge * 0.15;
+    const meterRent = 30;
+    const total = waterCharge + sewageCharge + meterRent;
+
+    res.json({
+      success: true,
+      calculation: {
+        units: u,
+        slab,
+        rate,
+        waterCharge: Math.round(waterCharge),
+        sewageCharge: Math.round(sewageCharge),
+        meterRent,
+        total: Math.round(total),
+        breakdown: [
+          { name: `Water Charges (${u} × ₹${rate})`, amount: Math.round(waterCharge) },
+          { name: "Sewage Cess (15%)", amount: Math.round(sewageCharge) },
+          { name: "Meter Rent", amount: meterRent },
+        ],
+      },
+    });
   });
 
   // ==================== SEED 100 SAMPLE USERS ====================

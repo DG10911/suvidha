@@ -10,11 +10,16 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
   - **Emergency SOS**: 6 emergency services (Police 100, Ambulance 108, Fire 101, Gas 1906, Electricity 1912, Water helpline) with alert logging and history
   - **Feedback System**: Star ratings (1-5) for 7 service categories, aggregated ratings summary, personal feedback history
   - **Govt Schemes**: 10 real government schemes (PM Awas Yojana, Ayushman Bharat, PM Kisan, Ujjwala, Sukanya Samriddhi, PM Vishwakarma, Atal Pension, PM Surya Ghar, Mahtari Vandana, Stand Up India) with eligibility, benefits, step-by-step application guide, and required documents
-  - **Enhanced Dashboard**: 9 colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback, Govt Schemes, Certificates, RTI, Nearby Services, Property Tax) added between main services and bottom tiles
+  - **Enhanced Dashboard**: 14 colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback, Govt Schemes, Certificates, RTI, Nearby Services, Property Tax, Blood Banks, Grievance Portal, Pension Tracker, DigiLocker, Water Bill) added between main services and bottom tiles
   - **Certificate Applications**: Apply for 8 govt certificates (Birth, Income, Caste, Domicile, Marriage, Death, Residence, Character) with fee calculation, tracking, document generation
   - **RTI Filing**: Digital Right to Information applications to 12 departments with BPL exemption, 30-day response tracking
   - **Nearby Services**: Directory of 19+ locations in Raipur (hospitals, police stations, banks, post offices, schools, gas agencies, ration shops) with contact info, hours, addresses
   - **Property Tax Calculator**: Estimate annual property tax based on property type, zone, area, floor, age with breakdown and early payment discount
+  - **Blood Bank Finder**: 6 real blood banks in Raipur with live blood group availability (A+/A-/B+/B-/O+/O-/AB+/AB-), stock levels, auto GPS location, distance sorting, Google Maps directions
+  - **Public Grievance Portal**: File grievances against 12 government departments with priority levels, officer assignment, expected resolution timeline, tracking by Grievance ID
+  - **Pension Tracker**: Check pension status, view payment history, apply for 5 pension schemes (Old Age, Widow, Disability, Atal, CG Social), bank account linking
+  - **DigiLocker**: Secure digital document vault for 14 document types (Aadhaar, PAN, Voter ID, DL, Ration Card, certificates, marksheets, land records), add/delete/search, verification status
+  - **Water Bill & Payment**: Enter connection ID to view 6-month billing history, pay unpaid bills via wallet, consumption trend chart, slab-based bill calculator
 - **Backend Integration**: All service pages now connected to real APIs
   - ElectricityService, GasService, MunicipalService form submissions → POST /api/complaints
   - ServiceRequest form → POST /api/complaints with real complaint IDs
@@ -51,6 +56,11 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - **govtSchemes** - Government schemes with eligibility, benefits, apply steps, documents
 - **certificateApplications** - 8 types of certificate applications (birth, death, income, caste, domicile, marriage, residence, character) with tracking
 - **rtiApplications** - Right to Information applications to 12 departments with BPL exemption
+- **grievances** - Public grievance filings with department, priority, officer assignment, resolution tracking
+- **pensionRecords** - Pension scheme registrations with monthly amount, status, payment dates
+- **pensionPayments** - Individual pension payment records with transaction IDs
+- **digiLocker** - Digital document storage with 14 types, verification status, issuer info
+- **waterBills** - Water billing records with connection ID, consumption, payment status
 
 ## Key Files
 - `client/src/lib/faceUtils.ts` - Face detection, 5-step liveness verification, anti-spoof checks
@@ -66,6 +76,11 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - `client/src/pages/RTIApplication.tsx` - File RTI applications with department selection
 - `client/src/pages/NearbyServices.tsx` - Directory of 19+ public facilities in Raipur
 - `client/src/pages/PropertyTaxCalc.tsx` - Property tax estimation calculator
+- `client/src/pages/BloodBankFinder.tsx` - Blood bank finder with GPS location and availability
+- `client/src/pages/GrievancePortal.tsx` - Public grievance filing and tracking
+- `client/src/pages/PensionTracker.tsx` - Pension status check and application
+- `client/src/pages/DigiLockerPage.tsx` - Digital document vault
+- `client/src/pages/WaterBillPage.tsx` - Water billing, payment, and calculator
 - `client/src/pages/Dashboard.tsx` - Main dashboard with all service tiles
 - `client/src/components/layout/KioskLayout.tsx` - Main layout with language/voice handling
 - `server/routes.ts` - API routes including all CRUD endpoints
@@ -94,6 +109,22 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - `/api/rti/track/:rtiId` - Track RTI by ID
 - `/api/nearby-services` - GET directory of 19+ public facilities with category/search filter
 - `/api/tax/calculate` - POST calculate property tax by zone, type, area, age
+- `/api/blood-banks` - GET blood banks with blood group availability, filter by group
+- `/api/grievances/departments` - GET 12 departments for grievance filing
+- `/api/grievances/file` - POST file a public grievance
+- `/api/grievances/my` - GET user's grievances
+- `/api/grievances/track/:grievanceId` - Track grievance by ID
+- `/api/pension/schemes` - GET 5 pension schemes with eligibility
+- `/api/pension/check` - GET pension records by userId or Aadhaar
+- `/api/pension/register` - POST apply for pension scheme
+- `/api/digilocker/types` - GET 14 document types
+- `/api/digilocker/my` - GET user's stored documents
+- `/api/digilocker/add` - POST add document to locker
+- `/api/digilocker/:id` - DELETE remove document
+- `/api/water/bills` - GET water bills by userId or connectionId
+- `/api/water/generate-bill` - POST generate 6-month billing history
+- `/api/water/pay` - POST pay water bill from wallet
+- `/api/water/calculate` - POST calculate water bill by units
 
 ## Running
 - Workflow: `cd Suvidha-Kioskzip/Suvidha-Kiosk && npm run dev`
