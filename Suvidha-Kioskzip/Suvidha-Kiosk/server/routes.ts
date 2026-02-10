@@ -16,8 +16,12 @@ import {
   linkedServices,
   walletAccounts,
   walletTransactions,
+  appointments,
+  feedback,
+  announcements,
+  emergencyLogs,
 } from "../shared/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, gte, lte, avg, count } from "drizzle-orm";
 import { registerAudioRoutes } from "./replit_integrations/audio/index.js";
 
 const departmentMap: Record<string, string> = {
@@ -1153,6 +1157,373 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== APPOINTMENTS ====================
+
+  const governmentOffices = [
+    { id: "collector", name: "District Collector Office", address: "Civil Lines, Raipur", slots: ["09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00", "14:00-14:30", "14:30-15:00", "15:00-15:30", "15:30-16:00"] },
+    { id: "municipal", name: "Municipal Corporation", address: "Budha Talab, Raipur", slots: ["10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00", "12:00-12:30", "14:00-14:30", "14:30-15:00", "15:00-15:30"] },
+    { id: "electricity", name: "CSPDCL Office", address: "Danganiya, Raipur", slots: ["09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00", "11:00-11:30", "14:00-14:30", "14:30-15:00"] },
+    { id: "water", name: "PHE Department", address: "Moudhapara, Raipur", slots: ["10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00", "14:00-14:30", "14:30-15:00", "15:00-15:30"] },
+    { id: "revenue", name: "Revenue Office (Tehsil)", address: "Collectorate, Raipur", slots: ["10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00", "14:00-14:30", "14:30-15:00"] },
+    { id: "rto", name: "RTO Office", address: "Tatibandh, Raipur", slots: ["09:30-10:00", "10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00", "14:00-14:30", "14:30-15:00", "15:00-15:30"] },
+  ];
+
+  app.get("/api/offices", (_req: Request, res: Response) => {
+    res.json({ success: true, offices: governmentOffices });
+  });
+
+  app.get("/api/appointments/slots", async (req: Request, res: Response) => {
+    try {
+      const { office, date } = req.query;
+      if (!office || !date) {
+        res.status(400).json({ success: false, message: "office and date required" });
+        return;
+      }
+
+      const officeData = governmentOffices.find(o => o.id === office);
+      if (!officeData) {
+        res.status(404).json({ success: false, message: "Office not found" });
+        return;
+      }
+
+      const booked = await db
+        .select({ timeSlot: appointments.timeSlot })
+        .from(appointments)
+        .where(and(
+          eq(appointments.office, office as string),
+          eq(appointments.date, date as string),
+          eq(appointments.status, "booked")
+        ));
+
+      const bookedSlots = new Set(booked.map(b => b.timeSlot));
+      const availableSlots = officeData.slots.map(slot => ({
+        time: slot,
+        available: !bookedSlots.has(slot),
+      }));
+
+      res.json({ success: true, slots: availableSlots, office: officeData });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.post("/api/appointments", async (req: Request, res: Response) => {
+    try {
+      const { userId, office, purpose, date, timeSlot, notes } = req.body;
+      if (!userId || !office || !purpose || !date || !timeSlot) {
+        res.status(400).json({ success: false, message: "Missing required fields" });
+        return;
+      }
+
+      const existing = await db.select().from(appointments)
+        .where(and(
+          eq(appointments.office, office),
+          eq(appointments.date, date),
+          eq(appointments.timeSlot, timeSlot),
+          eq(appointments.status, "booked")
+        )).limit(1);
+
+      if (existing.length > 0) {
+        res.status(409).json({ success: false, message: "This time slot is already booked" });
+        return;
+      }
+
+      const tokenNumber = `TKN-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+
+      const [appointment] = await db.insert(appointments).values({
+        userId,
+        office,
+        purpose,
+        date,
+        timeSlot,
+        tokenNumber,
+        status: "booked",
+        notes: notes || null,
+      }).returning();
+
+      const officeData = governmentOffices.find(o => o.id === office);
+
+      await db.insert(notifications).values({
+        userId,
+        type: "info",
+        title: "Appointment Booked",
+        message: `Your appointment at ${officeData?.name || office} on ${date} at ${timeSlot} is confirmed. Token: ${tokenNumber}`,
+        read: false,
+        actionLink: `/dashboard/appointments`,
+      });
+
+      await db.insert(documents).values({
+        userId,
+        title: `Appointment Confirmation - ${tokenNumber}`,
+        type: "receipt",
+        service: officeData?.name || office,
+        referenceId: tokenNumber,
+        content: JSON.stringify({
+          tokenNumber,
+          office: officeData?.name || office,
+          address: officeData?.address || "",
+          purpose,
+          date,
+          timeSlot,
+          bookedAt: new Date().toISOString(),
+        }),
+      });
+
+      res.json({ success: true, appointment });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/appointments", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) {
+        res.status(400).json({ success: false, message: "userId required" });
+        return;
+      }
+
+      const userAppointments = await db
+        .select()
+        .from(appointments)
+        .where(eq(appointments.userId, userId))
+        .orderBy(desc(appointments.createdAt));
+
+      res.json({ success: true, appointments: userAppointments });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.patch("/api/appointments/:id/cancel", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await db.update(appointments)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(eq(appointments.id, parseInt(id)));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== FEEDBACK ====================
+
+  app.post("/api/feedback", async (req: Request, res: Response) => {
+    try {
+      const { userId, complaintId, service, rating, comment } = req.body;
+      if (!service || !rating || rating < 1 || rating > 5) {
+        res.status(400).json({ success: false, message: "Service and rating (1-5) required" });
+        return;
+      }
+
+      const [fb] = await db.insert(feedback).values({
+        userId: userId || null,
+        complaintId: complaintId || null,
+        service,
+        rating,
+        comment: comment || null,
+      }).returning();
+
+      if (userId) {
+        await db.insert(notifications).values({
+          userId,
+          type: "info",
+          title: "Thank You for Your Feedback",
+          message: `Your ${rating}-star rating for ${service} has been recorded. Your feedback helps us improve!`,
+          read: false,
+        });
+      }
+
+      res.json({ success: true, feedback: fb });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/feedback/summary", async (_req: Request, res: Response) => {
+    try {
+      const results = await db
+        .select({
+          service: feedback.service,
+          avgRating: sql<number>`ROUND(AVG(${feedback.rating})::numeric, 1)`,
+          totalRatings: sql<number>`COUNT(*)::int`,
+        })
+        .from(feedback)
+        .groupBy(feedback.service);
+
+      res.json({ success: true, summary: results });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/feedback", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      const result = userId
+        ? await db.select().from(feedback).where(eq(feedback.userId, userId)).orderBy(desc(feedback.createdAt))
+        : await db.select().from(feedback).orderBy(desc(feedback.createdAt)).limit(50);
+
+      res.json({ success: true, feedback: result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== ANNOUNCEMENTS ====================
+
+  app.get("/api/announcements", async (_req: Request, res: Response) => {
+    try {
+      const now = new Date();
+      const activeAnnouncements = await db
+        .select()
+        .from(announcements)
+        .where(eq(announcements.active, true))
+        .orderBy(desc(announcements.createdAt));
+
+      const filtered = activeAnnouncements.filter(a => {
+        if (a.endDate && new Date(a.endDate) < now) return false;
+        if (a.startDate && new Date(a.startDate) > now) return false;
+        return true;
+      });
+
+      res.json({ success: true, announcements: filtered });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== EMERGENCY ====================
+
+  app.post("/api/emergency", async (req: Request, res: Response) => {
+    try {
+      const { userId, serviceType, notes } = req.body;
+      if (!serviceType) {
+        res.status(400).json({ success: false, message: "Service type required" });
+        return;
+      }
+
+      const [log] = await db.insert(emergencyLogs).values({
+        userId: userId || null,
+        serviceType,
+        notes: notes || null,
+        status: "initiated",
+      }).returning();
+
+      if (userId) {
+        await db.insert(notifications).values({
+          userId,
+          type: "alert",
+          title: "Emergency Alert Sent",
+          message: `Your ${serviceType} emergency alert has been registered. Help is on the way. Reference: EMG-${log.id}`,
+          read: false,
+        });
+      }
+
+      res.json({ success: true, emergency: log, referenceId: `EMG-${log.id}` });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/emergency/history", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) {
+        res.status(400).json({ success: false, message: "userId required" });
+        return;
+      }
+
+      const history = await db
+        .select()
+        .from(emergencyLogs)
+        .where(eq(emergencyLogs.userId, userId))
+        .orderBy(desc(emergencyLogs.createdAt))
+        .limit(20);
+
+      res.json({ success: true, history });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ==================== DASHBOARD STATS ====================
+
+  app.get("/api/dashboard/stats/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const [walletData] = await db.select().from(walletAccounts).where(eq(walletAccounts.userId, userId)).limit(1);
+
+      const [activeComplaintCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(complaints)
+        .where(and(eq(complaints.userId, userId), sql`${complaints.status} NOT IN ('resolved', 'closed')`));
+
+      const [resolvedCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(complaints)
+        .where(and(eq(complaints.userId, userId), sql`${complaints.status} IN ('resolved', 'closed')`));
+
+      const upcomingAppointments = await db
+        .select()
+        .from(appointments)
+        .where(and(eq(appointments.userId, userId), eq(appointments.status, "booked")))
+        .orderBy(appointments.date)
+        .limit(3);
+
+      const [unreadNotifs] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+
+      const [totalDocuments] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(documents)
+        .where(eq(documents.userId, userId));
+
+      const recentActivity = await db
+        .select({
+          id: notifications.id,
+          type: notifications.type,
+          title: notifications.title,
+          message: notifications.message,
+          createdAt: notifications.createdAt,
+        })
+        .from(notifications)
+        .where(eq(notifications.userId, userId))
+        .orderBy(desc(notifications.createdAt))
+        .limit(5);
+
+      const feedbackSummary = await db
+        .select({
+          service: feedback.service,
+          avgRating: sql<number>`ROUND(AVG(${feedback.rating})::numeric, 1)`,
+          total: sql<number>`count(*)::int`,
+        })
+        .from(feedback)
+        .groupBy(feedback.service);
+
+      res.json({
+        success: true,
+        stats: {
+          walletBalance: walletData?.balance || "0.00",
+          activeComplaints: activeComplaintCount?.count || 0,
+          resolvedComplaints: resolvedCount?.count || 0,
+          upcomingAppointments,
+          unreadNotifications: unreadNotifs?.count || 0,
+          totalDocuments: totalDocuments?.count || 0,
+          recentActivity,
+          feedbackSummary,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
   // ==================== SEED 100 SAMPLE USERS ====================
   app.post("/api/admin/seed-users", async (_req: Request, res: Response) => {
     try {
@@ -1316,6 +1687,71 @@ export async function registerRoutes(
         console.log("[Seed] Sample users seeded successfully.");
       } else {
         console.log(`[Seed] Already have ${count} users, skipping seed.`);
+      }
+
+      const existingAnnouncements = await db.select({ count: sql`count(*)` }).from(announcements);
+      const announcementCount = Number(existingAnnouncements[0]?.count || 0);
+      if (announcementCount === 0) {
+        console.log("[Seed] Seeding announcements...");
+        await db.insert(announcements).values([
+          {
+            title: "Water Supply Maintenance - Zone 3 & 4",
+            body: "Water supply will be disrupted in Zone 3 and Zone 4 on Feb 15, 2026 from 9 AM to 5 PM due to pipeline maintenance. Please store sufficient water. Tanker services available on helpline 1800-233-4455.",
+            category: "water",
+            priority: "high",
+            active: true,
+          },
+          {
+            title: "New Ration Card Applications Open",
+            body: "Applications for new ration cards are now being accepted at all Suvidha Kiosks. Bring Aadhaar, address proof, and income certificate. Last date: March 31, 2026.",
+            category: "scheme",
+            priority: "normal",
+            active: true,
+          },
+          {
+            title: "Property Tax Early Payment - 10% Discount",
+            body: "Pay your property tax before March 15, 2026 to avail 10% early payment discount. Payment accepted via wallet, UPI, or cash at any Suvidha Kiosk.",
+            category: "tax",
+            priority: "high",
+            active: true,
+          },
+          {
+            title: "Free Health Camp - Pandri Community Center",
+            body: "Free health checkup camp organized by Municipal Corporation at Pandri Community Center on Feb 20-22, 2026. Services include BP check, diabetes screening, eye checkup, and dental consultation.",
+            category: "health",
+            priority: "normal",
+            active: true,
+          },
+          {
+            title: "Electricity Tariff Revision Notice",
+            body: "CSPDCL has revised electricity tariffs effective April 1, 2026. Domestic consumers: ₹3.50/unit (0-100), ₹5.00/unit (101-300), ₹6.50/unit (300+). Visit CSPDCL office or call 1912 for details.",
+            category: "electricity",
+            priority: "normal",
+            active: true,
+          },
+          {
+            title: "Smart City Road Construction - NH30 Diversion",
+            body: "NH30 near Telibandha will be under construction from Feb 12-28, 2026. Traffic diverted via VIP Road. Please plan your travel accordingly.",
+            category: "infrastructure",
+            priority: "high",
+            active: true,
+          },
+          {
+            title: "PM Awas Yojana - New Registrations",
+            body: "Registrations open for PM Awas Yojana (Urban) for eligible families. Apply at District Collector Office or through this kiosk. Income limit: ₹3 lakh/year for EWS category.",
+            category: "scheme",
+            priority: "normal",
+            active: true,
+          },
+          {
+            title: "Gas Cylinder Subsidy Direct Transfer",
+            body: "LPG subsidy is now transferred directly to your linked bank account. Ensure your bank account and Aadhaar are linked. Check status at any Gas Service counter.",
+            category: "gas",
+            priority: "normal",
+            active: true,
+          },
+        ]);
+        console.log("[Seed] Announcements seeded successfully.");
       }
     } catch (e: any) {
       console.error("[Seed] Error:", e.message);

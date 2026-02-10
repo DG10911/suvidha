@@ -18,6 +18,10 @@ import Signup from "@/pages/Signup";
 import FaceLogin from "@/pages/FaceLogin";
 import ThankYou from "@/pages/ThankYou";
 import Wallet from "@/pages/Wallet";
+import AppointmentBooking from "@/pages/AppointmentBooking";
+import Announcements from "@/pages/Announcements";
+import EmergencySOS from "@/pages/EmergencySOS";
+import FeedbackPage from "@/pages/FeedbackPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -30,6 +34,10 @@ function Router() {
       <Route path="/dashboard/notifications" component={Notifications} />
       <Route path="/dashboard/profile" component={Profile} />
       <Route path="/dashboard/wallet" component={Wallet} />
+      <Route path="/dashboard/appointments" component={AppointmentBooking} />
+      <Route path="/dashboard/announcements" component={Announcements} />
+      <Route path="/dashboard/emergency" component={EmergencySOS} />
+      <Route path="/dashboard/feedback" component={FeedbackPage} />
       <Route path="/service/electricity" component={ElectricityService} />
       <Route path="/service/gas" component={GasService} />
       <Route path="/service/municipal" component={MunicipalService} />

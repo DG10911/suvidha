@@ -117,6 +117,51 @@ export const walletTransactions = pgTable("wallet_transactions", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const appointments = pgTable("appointments", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  office: text("office").notNull(),
+  purpose: text("purpose").notNull(),
+  date: text("date").notNull(),
+  timeSlot: text("time_slot").notNull(),
+  tokenNumber: text("token_number"),
+  status: text("status").notNull().default("booked"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const feedback = pgTable("feedback", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  complaintId: text("complaint_id"),
+  service: text("service").notNull(),
+  rating: integer("rating").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const announcements = pgTable("announcements", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  category: text("category").notNull().default("general"),
+  priority: text("priority").notNull().default("normal"),
+  active: boolean("active").default(true),
+  startDate: timestamp("start_date").default(sql`CURRENT_TIMESTAMP`),
+  endDate: timestamp("end_date"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const emergencyLogs = pgTable("emergency_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  serviceType: text("service_type").notNull(),
+  notes: text("notes"),
+  status: text("status").notNull().default("initiated"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export type FaceProfile = typeof faceProfiles.$inferSelect;
 export type QrToken = typeof qrTokens.$inferSelect;
 export type Complaint = typeof complaints.$inferSelect;
@@ -126,5 +171,9 @@ export type Notification = typeof notifications.$inferSelect;
 export type LinkedService = typeof linkedServices.$inferSelect;
 export type WalletAccount = typeof walletAccounts.$inferSelect;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type Appointment = typeof appointments.$inferSelect;
+export type Feedback = typeof feedback.$inferSelect;
+export type Announcement = typeof announcements.$inferSelect;
+export type EmergencyLog = typeof emergencyLogs.$inferSelect;
 
 export * from "./models/chat";

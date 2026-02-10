@@ -3,7 +3,8 @@ import {
   Zap, Droplets, Flame, Trash2, Construction, FileText, AlertTriangle, 
   ChevronRight, Bell, FolderOpen, User, MessageSquare, Shield, Clock,
   CreditCard, Wrench, CircleAlert, Landmark, Type, Wallet,
-  Receipt, BellRing, CheckCircle2, Timer
+  Receipt, BellRing, CheckCircle2, Timer, Calendar, Megaphone, ShieldAlert, Star,
+  TrendingUp, Ticket, IndianRupee
 } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -103,6 +104,42 @@ const bottomTiles = [
     color: "bg-cyan-600",
     descKey: "profile_desc" as TranslationKey,
     href: "/dashboard/profile",
+  },
+];
+
+const newFeatureTiles = [
+  {
+    id: "appointments",
+    title: "Appointments",
+    desc: "Book office visits",
+    icon: Calendar,
+    color: "bg-indigo-500",
+    href: "/dashboard/appointments",
+  },
+  {
+    id: "announcements",
+    title: "Announcements",
+    desc: "Latest updates",
+    icon: Megaphone,
+    color: "bg-violet-500",
+    href: "/dashboard/announcements",
+  },
+  {
+    id: "emergency",
+    title: "Emergency SOS",
+    desc: "Quick help access",
+    icon: ShieldAlert,
+    color: "bg-red-600",
+    href: "/dashboard/emergency",
+    pulse: true,
+  },
+  {
+    id: "feedback",
+    title: "Feedback",
+    desc: "Rate services",
+    icon: Star,
+    color: "bg-yellow-500",
+    href: "/dashboard/feedback",
   },
 ];
 
@@ -259,6 +296,28 @@ export default function Dashboard() {
                 </Link>
               )}
             </motion.div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-4 gap-4">
+          {newFeatureTiles.map((tile, index) => (
+            <Link key={tile.id} href={tile.href}>
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 + index * 0.04 }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className={`rounded-2xl p-5 shadow-md hover:shadow-xl transition-all cursor-pointer group text-white ${tile.color} relative overflow-hidden`}
+              >
+                {"pulse" in tile && tile.pulse && (
+                  <span className="absolute top-3 right-3 w-3 h-3 bg-white rounded-full animate-pulse" />
+                )}
+                <tile.icon className="w-8 h-8 mb-2 group-hover:scale-110 transition-transform" />
+                <h4 className="text-lg font-bold leading-tight">{tile.title}</h4>
+                <p className="text-sm text-white/80 mt-0.5">{tile.desc}</p>
+              </motion.div>
+            </Link>
           ))}
         </div>
 

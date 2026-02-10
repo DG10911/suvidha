@@ -4,6 +4,12 @@
 Suvidha Kiosk is a digital citizen services kiosk application built with React (Vite) frontend and Express backend. It provides civic services including face-based login, mobile login, QR code scanning, and citizen registration via Aadhaar.
 
 ## Recent Changes (Feb 2026)
+- **New Features Added**:
+  - **Appointment Booking**: Multi-step wizard to book visits at 6 government offices with slot availability, token generation, confirmation receipts, cancel support
+  - **Announcements Board**: Government announcements with category filtering (water, electricity, gas, health, scheme, tax, infrastructure), 8 auto-seeded announcements
+  - **Emergency SOS**: 6 emergency services (Police 100, Ambulance 108, Fire 101, Gas 1906, Electricity 1912, Water helpline) with alert logging and history
+  - **Feedback System**: Star ratings (1-5) for 7 service categories, aggregated ratings summary, personal feedback history
+  - **Enhanced Dashboard**: 4 new colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback) added between main services and bottom tiles
 - **Backend Integration**: All service pages now connected to real APIs
   - ElectricityService, GasService, MunicipalService form submissions → POST /api/complaints
   - ServiceRequest form → POST /api/complaints with real complaint IDs
@@ -31,15 +37,38 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - **SMS/OTP**: Twilio (via Replit connector)
 - **ORM**: Drizzle
 
+## Database Tables
+- users, faceProfiles, qrTokens, complaints, complaintTimeline, documents, notifications, linkedServices, walletAccounts, walletTransactions
+- **appointments** - Office visit bookings with slots, tokens, status
+- **feedback** - Service ratings (1-5) with optional comments
+- **announcements** - Government notices with categories, priority, date filtering
+- **emergencyLogs** - Emergency service alert records
+
 ## Key Files
 - `client/src/lib/faceUtils.ts` - Face detection, 5-step liveness verification, anti-spoof checks
 - `client/src/lib/speechHelper.ts` - Queue-based TTS with delay management
 - `client/src/pages/FaceLogin.tsx` - Face login with liveness UI and instructions
 - `client/src/pages/Signup.tsx` - Citizen registration with face capture and liveness
+- `client/src/pages/AppointmentBooking.tsx` - Multi-step appointment booking wizard
+- `client/src/pages/Announcements.tsx` - Government announcements with filters
+- `client/src/pages/EmergencySOS.tsx` - Emergency services quick access
+- `client/src/pages/FeedbackPage.tsx` - Service rating and feedback
+- `client/src/pages/Dashboard.tsx` - Main dashboard with all service tiles
 - `client/src/components/layout/KioskLayout.tsx` - Main layout with language/voice handling
-- `server/routes.ts` - API routes including duplicate face check
+- `server/routes.ts` - API routes including all CRUD endpoints
 - `server/twilio.ts` - Twilio SMS/OTP integration
 - `server/replit_integrations/audio/client.ts` - OpenAI TTS client
+
+## API Routes
+- `/api/offices` - List government offices
+- `/api/appointments` - GET (list), POST (book), PATCH /:id/cancel
+- `/api/appointments/slots` - Available slots for office+date
+- `/api/feedback` - GET (list), POST (submit)
+- `/api/feedback/summary` - Aggregated ratings per service
+- `/api/announcements` - Active announcements with date filtering
+- `/api/emergency` - POST (log alert)
+- `/api/emergency/history` - User emergency history
+- `/api/dashboard/stats/:userId` - Unified dashboard statistics
 
 ## Running
 - Workflow: `cd Suvidha-Kioskzip/Suvidha-Kiosk && npm run dev`
@@ -61,6 +90,9 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - Scanning overlay: dimmed background, glowing corners, scan line with trail, grid pattern, rotating rays, floating particles, HUD data readout
 - Identity consistency: 0.55 distance threshold, 55% pair consistency, requires ≥3 frames
 - Speech queue: 150ms pre-speak delay, 200ms inter-queue delay, 800ms language change delay
+- Appointment slots: 30-min intervals, max 30 days advance booking, token generated on confirmation
+- Announcements: startDate/endDate filtering, category-based organization
+- Emergency: 6 services mapped to real Indian helpline numbers
 
 ## User Preferences
 - Strong anti-spoof: must block photos shown on phone screens
