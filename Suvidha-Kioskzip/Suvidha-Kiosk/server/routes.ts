@@ -20,6 +20,7 @@ import {
   feedback,
   announcements,
   emergencyLogs,
+  govtSchemes,
 } from "../shared/schema";
 import { eq, desc, and, sql, gte, lte, avg, count } from "drizzle-orm";
 import { registerAudioRoutes } from "./replit_integrations/audio/index.js";
@@ -1524,6 +1525,48 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== GOVT SCHEMES ====================
+
+  app.get("/api/schemes", async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string;
+      let result;
+      if (category && category !== "all") {
+        result = await db
+          .select()
+          .from(govtSchemes)
+          .where(and(eq(govtSchemes.active, true), eq(govtSchemes.category, category)))
+          .orderBy(desc(govtSchemes.createdAt));
+      } else {
+        result = await db
+          .select()
+          .from(govtSchemes)
+          .where(eq(govtSchemes.active, true))
+          .orderBy(desc(govtSchemes.createdAt));
+      }
+      res.json({ success: true, schemes: result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  app.get("/api/schemes/:id", async (req: Request, res: Response) => {
+    try {
+      const [scheme] = await db
+        .select()
+        .from(govtSchemes)
+        .where(eq(govtSchemes.id, parseInt(req.params.id)))
+        .limit(1);
+      if (!scheme) {
+        res.status(404).json({ success: false, message: "Scheme not found" });
+        return;
+      }
+      res.json({ success: true, scheme });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
   // ==================== SEED 100 SAMPLE USERS ====================
   app.post("/api/admin/seed-users", async (_req: Request, res: Response) => {
     try {
@@ -1752,6 +1795,148 @@ export async function registerRoutes(
           },
         ]);
         console.log("[Seed] Announcements seeded successfully.");
+      }
+
+      const existingSchemes = await db.select({ count: sql`count(*)` }).from(govtSchemes);
+      const schemeCount = Number(existingSchemes[0]?.count || 0);
+      if (schemeCount === 0) {
+        console.log("[Seed] Seeding government schemes...");
+        await db.insert(govtSchemes).values([
+          {
+            name: "PM Awas Yojana (Urban) 2.0",
+            ministry: "Ministry of Housing and Urban Affairs",
+            category: "housing",
+            summary: "Affordable housing scheme for urban poor and middle-income families. Provides financial assistance up to ₹2.5 lakh for construction or purchase of a house.",
+            eligibility: "• EWS: Annual income up to ₹3 lakh\n• LIG: Annual income ₹3-6 lakh\n• MIG-I: Annual income ₹6-12 lakh\n• MIG-II: Annual income ₹12-18 lakh\n• Applicant should not own a pucca house anywhere in India\n• Women ownership or co-ownership mandatory for EWS/LIG",
+            benefits: "• EWS/LIG: Up to ₹2.5 lakh subsidy\n• MIG-I: Up to ₹2.35 lakh interest subsidy on home loan\n• MIG-II: Up to ₹2.30 lakh interest subsidy\n• Credit-linked subsidy on home loans at 6.5% interest for 20 years",
+            howToApply: "Step 1: Visit the nearest Suvidha Kiosk or Common Service Centre (CSC)\nStep 2: Fill the PMAY-U application form with Aadhaar details\nStep 3: Submit income proof, address proof, and Aadhaar card\nStep 4: Application verified by Urban Local Body (ULB)\nStep 5: Approved beneficiaries receive sanction letter\nStep 6: Subsidy credited directly to beneficiary's bank/loan account",
+            documentsRequired: "• Aadhaar Card (mandatory)\n• Income Certificate from Tehsildar\n• Address Proof (Ration Card / Voter ID / Utility Bill)\n• Bank Account Details with IFSC\n• Passport-size Photos (3)\n• Affidavit of not owning pucca house\n• Land ownership documents (if applicable)",
+            websiteUrl: "https://pmaymis.gov.in",
+            lastDate: "March 31, 2026",
+            isNew: true,
+            active: true,
+          },
+          {
+            name: "Ayushman Bharat - PMJAY",
+            ministry: "Ministry of Health & Family Welfare",
+            category: "health",
+            summary: "World's largest health insurance scheme providing free health cover of ₹5 lakh per family per year for secondary and tertiary hospitalization to poor and vulnerable families.",
+            eligibility: "• Families identified through SECC 2011 data\n• No restriction on family size or age\n• Deprived rural families and identified urban worker categories\n• All ration card holders from Chhattisgarh automatically eligible\n• Pre-existing diseases covered from day one",
+            benefits: "• ₹5 lakh health cover per family per year\n• 1,929+ treatment packages covered\n• Cashless treatment at empanelled hospitals\n• Pre and post hospitalization expenses (3 & 15 days)\n• Transport allowance included\n• No cap on family size",
+            howToApply: "Step 1: Check eligibility on mera.pmjay.gov.in or call 14555\nStep 2: Visit nearest Ayushman Mitra at empanelled hospital or CSC\nStep 3: Verify identity with Aadhaar card and ration card\nStep 4: e-KYC and biometric verification completed\nStep 5: Ayushman Card generated instantly (Golden Card)\nStep 6: Use card for cashless treatment at any empanelled hospital across India",
+            documentsRequired: "• Aadhaar Card\n• Ration Card or SECC letter\n• Mobile Number for OTP\n• Passport-size Photo\n• Any government-issued ID (Voter ID, PAN, Driving License)",
+            websiteUrl: "https://pmjay.gov.in",
+            isNew: true,
+            active: true,
+          },
+          {
+            name: "PM Kisan Samman Nidhi",
+            ministry: "Ministry of Agriculture & Farmers Welfare",
+            category: "agriculture",
+            summary: "Direct income support of ₹6,000 per year in three equal installments to all landholding farmer families across the country.",
+            eligibility: "• All landholding farmer families with cultivable land\n• Small and marginal farmers (land up to 2 hectares) get priority\n• Must have valid Aadhaar and bank account\n• Institutional landholders, income tax payers, and govt employees excluded\n• Farmers from Chhattisgarh can apply at any Suvidha Kiosk",
+            benefits: "• ₹6,000 per year (₹2,000 every 4 months)\n• Direct bank transfer (DBT)\n• No middlemen involved\n• Three installments: Apr-Jul, Aug-Nov, Dec-Mar\n• Can be used for any farming or personal need",
+            howToApply: "Step 1: Visit Suvidha Kiosk or PM-KISAN portal (pmkisan.gov.in)\nStep 2: Register with Aadhaar number, name, and bank details\nStep 3: Enter land details (survey number, area in hectares)\nStep 4: Upload land ownership documents\nStep 5: Verification by State/UT government officials\nStep 6: After approval, ₹2,000 credited to bank account every 4 months",
+            documentsRequired: "• Aadhaar Card\n• Bank Passbook (first page with IFSC)\n• Land Ownership Records (Khasra/Khatauni/B1)\n• Mobile Number linked with Aadhaar\n• Passport-size Photo",
+            websiteUrl: "https://pmkisan.gov.in",
+            isNew: false,
+            active: true,
+          },
+          {
+            name: "Ujjwala Yojana 2.0",
+            ministry: "Ministry of Petroleum & Natural Gas",
+            category: "energy",
+            summary: "Free LPG connections to women from BPL households. Under 2.0, first refill and hotplate also provided free along with the connection.",
+            eligibility: "• Women from BPL households\n• No LPG connection in the household\n• Adult woman member of the household\n• Priority to SC/ST, Pradhan Mantri Awas Yojana beneficiaries, Antyodaya, forest dwellers, tea garden workers\n• Migrant workers' families can apply with self-declaration",
+            benefits: "• Free LPG connection with 14.2 kg cylinder\n• Free first refill\n• Free hotplate (stove)\n• Deposit-free connection\n• EMI facility for subsequent refills\n• Subsidy directly credited to bank account",
+            howToApply: "Step 1: Visit nearest LPG distributor or Suvidha Kiosk\nStep 2: Fill the Ujjwala 2.0 application form (KYC form)\nStep 3: Submit required documents (BPL list/Ration Card + Aadhaar)\nStep 4: e-KYC verification at distributor point\nStep 5: Connection installed at home within 7-15 days\nStep 6: First cylinder and hotplate delivered free of cost",
+            documentsRequired: "• Aadhaar Card (mandatory for both applicant and adult family members)\n• BPL Ration Card or Certificate\n• Bank Account Passbook\n• Passport-size Photo\n• Address Proof (if different from Aadhaar)\n• Self-declaration for migrants (in lieu of ration card)",
+            websiteUrl: "https://www.pmujjwalayojana.com",
+            isNew: false,
+            active: true,
+          },
+          {
+            name: "Sukanya Samriddhi Yojana",
+            ministry: "Ministry of Finance",
+            category: "women",
+            summary: "Small savings scheme for girl children offering 8.2% interest rate with tax benefits. Secure your daughter's future education and marriage expenses.",
+            eligibility: "• Parents/legal guardian of a girl child\n• Girl child must be below 10 years of age\n• Maximum 2 accounts per family (one per girl child)\n• Third account allowed only in case of twin girls\n• Indian resident only",
+            benefits: "• Interest rate: 8.2% per annum (compounded annually)\n• Tax deduction under Section 80C (up to ₹1.5 lakh)\n• Interest earned is tax-free\n• Maturity amount is tax-free\n• Minimum deposit: ₹250/year\n• Maximum deposit: ₹1.5 lakh/year\n• Maturity: 21 years from account opening or marriage after 18",
+            howToApply: "Step 1: Visit any Post Office or authorized bank branch\nStep 2: Fill SSY Account Opening Form\nStep 3: Submit girl child's birth certificate and guardian's ID\nStep 4: Make initial deposit (minimum ₹250)\nStep 5: Receive passbook with account number\nStep 6: Deposit annually (minimum ₹250) for 15 years, account matures at 21 years",
+            documentsRequired: "• Birth Certificate of girl child\n• Aadhaar Card of guardian/parent\n• PAN Card of guardian\n• Address Proof\n• Passport-size Photos (guardian and girl child)\n• Initial deposit amount",
+            websiteUrl: "https://www.nsiindia.gov.in",
+            isNew: false,
+            active: true,
+          },
+          {
+            name: "PM Vishwakarma Yojana",
+            ministry: "Ministry of Micro, Small & Medium Enterprises",
+            category: "employment",
+            summary: "End-to-end support for traditional artisans and craftspeople through recognition, skill upgradation, toolkit incentive, credit support and market linkage.",
+            eligibility: "• Traditional artisans/craftspeople working with hands and tools\n• 18 trades covered: Carpenter, Blacksmith, Goldsmith, Potter, Sculptor, Cobbler, Tailor, Weaver, etc.\n• Age 18+ years\n• Must be self-employed, not in government/PSU\n• Only one member per family eligible\n• Registration through CSC/Suvidha Kiosk with biometric",
+            benefits: "• PM Vishwakarma Certificate and ID Card\n• ₹15,000 toolkit incentive (via e-RUPI/e-voucher)\n• Collateral-free credit: ₹1 lakh (first) + ₹2 lakh (second tranche) at 5% interest\n• Free skill training: Basic (5-7 days) + Advanced (15 days)\n• ₹500/day stipend during training\n• Digital transaction incentive: ₹1 per transaction (max ₹100/month)\n• Marketing & branding support",
+            howToApply: "Step 1: Visit Suvidha Kiosk or Common Service Centre\nStep 2: Register on PM Vishwakarma portal with Aadhaar and mobile\nStep 3: Gram Panchayat/ULB verifies your trade and identity\nStep 4: Receive PM Vishwakarma Certificate and ID Card\nStep 5: Enroll for skill training at designated center\nStep 6: After training, apply for toolkit incentive and credit support\nStep 7: Open bank account (if not available) for direct benefit transfer",
+            documentsRequired: "• Aadhaar Card\n• Mobile Number linked to Aadhaar\n• Bank Account with IFSC\n• Ration Card / BPL Certificate\n• Caste Certificate (if applicable)\n• Passport-size Photo\n• Trade-related evidence (tools, workspace photo)",
+            websiteUrl: "https://pmvishwakarma.gov.in",
+            lastDate: "Open enrollment",
+            isNew: true,
+            active: true,
+          },
+          {
+            name: "Atal Pension Yojana",
+            ministry: "Ministry of Finance, Dept. of Financial Services",
+            category: "pension",
+            summary: "Guaranteed minimum pension of ₹1,000 to ₹5,000 per month after 60 years of age for unorganized sector workers. Government co-contributes 50% for eligible subscribers.",
+            eligibility: "• Indian citizen aged 18-40 years\n• Must have savings bank account\n• Must have valid mobile number\n• Not covered under any statutory social security scheme\n• Not an income tax payer\n• Government co-contribution available for those who joined before Dec 2015",
+            benefits: "• Guaranteed pension: ₹1,000 / ₹2,000 / ₹3,000 / ₹4,000 / ₹5,000 per month\n• Pension starts at age 60\n• Spouse gets same pension after subscriber's death\n• Nominee receives accumulated corpus\n• Tax benefit under Section 80CCD\n• Monthly contribution as low as ₹42 (age 18, ₹1,000 pension)",
+            howToApply: "Step 1: Visit your bank branch or open account through net banking/mobile app\nStep 2: Fill APY registration form\nStep 3: Choose pension amount (₹1,000 to ₹5,000)\nStep 4: Provide Aadhaar and mobile number\nStep 5: Set up auto-debit from savings account\nStep 6: Receive confirmation SMS and PRAN (Permanent Retirement Account Number)",
+            documentsRequired: "• Aadhaar Card\n• Bank Account (Savings)\n• Mobile Number\n• Nominee details with Aadhaar",
+            websiteUrl: "https://www.npscra.nsdl.co.in/scheme-details.php",
+            isNew: false,
+            active: true,
+          },
+          {
+            name: "PM Surya Ghar Muft Bijli Yojana",
+            ministry: "Ministry of New and Renewable Energy",
+            category: "energy",
+            summary: "Free electricity scheme through rooftop solar panels. Get up to 300 units of free electricity per month with heavy subsidy on solar panel installation.",
+            eligibility: "• Any residential household with a valid electricity connection\n• Roof should be suitable for solar panel installation\n• Grid-connected rooftop solar system required\n• Must apply through registered vendor empanelled by DISCOM\n• Available across all states and UTs",
+            benefits: "• Up to 300 units free electricity per month\n• Central subsidy: ₹30,000 for 1 kW, ₹60,000 for 2 kW, ₹78,000 for 3+ kW systems\n• Excess electricity sold to grid at feed-in tariff\n• 25+ years system life with minimal maintenance\n• Estimated savings: ₹15,000-25,000 per year\n• Collateral-free loan available from banks at subsidized rates",
+            howToApply: "Step 1: Register on National Portal (pmsuryaghar.gov.in) with electricity bill details\nStep 2: Select rooftop solar capacity based on consumption\nStep 3: Choose empanelled vendor from DISCOM list\nStep 4: Vendor conducts site survey and installs panels\nStep 5: DISCOM inspects and approves net metering installation\nStep 6: Apply for subsidy on portal after commissioning\nStep 7: Subsidy credited to bank account within 30 days of approval",
+            documentsRequired: "• Aadhaar Card\n• Latest Electricity Bill\n• Bank Account Details\n• Passport-size Photo\n• Property ownership proof or NOC from owner\n• Roof area details / photos\n• Mobile Number for registration",
+            websiteUrl: "https://pmsuryaghar.gov.in",
+            lastDate: "March 31, 2027",
+            isNew: true,
+            active: true,
+          },
+          {
+            name: "Chhattisgarh Mahtari Vandana Yojana",
+            ministry: "Government of Chhattisgarh",
+            category: "women",
+            summary: "State scheme providing ₹1,000 per month financial assistance to married women of Chhattisgarh for their empowerment and economic independence.",
+            eligibility: "• Married women of Chhattisgarh\n• Age: 21 years and above\n• Must be resident of Chhattisgarh\n• Annual family income should not exceed ₹2.5 lakh\n• Must have bank account linked with Aadhaar\n• Widows, divorced, and deserted women also eligible",
+            benefits: "• ₹1,000 per month (₹12,000 per year)\n• Direct bank transfer to woman's own account\n• No middlemen involvement\n• Helps in economic empowerment\n• Can be used for any personal or family need",
+            howToApply: "Step 1: Visit Suvidha Kiosk, Anganwadi Centre, or CSC\nStep 2: Fill the Mahtari Vandana application form\nStep 3: Submit Aadhaar, marriage certificate, and bank details\nStep 4: Biometric verification (fingerprint) at kiosk\nStep 5: Application verified by local administration\nStep 6: After approval, ₹1,000 credited monthly to bank account",
+            documentsRequired: "• Aadhaar Card\n• Marriage Certificate or husband's Aadhaar\n• Bank Passbook (own account in woman's name)\n• Residence Proof (Ration Card / Voter ID)\n• Income Certificate (if applicable)\n• Passport-size Photo\n• Mobile Number",
+            websiteUrl: "https://mahtarivandan.cgstate.gov.in",
+            isNew: true,
+            active: true,
+          },
+          {
+            name: "Stand Up India - SC/ST/Women Entrepreneurs",
+            ministry: "Ministry of Finance, Dept. of Financial Services",
+            category: "employment",
+            summary: "Bank loans between ₹10 lakh and ₹1 crore for SC, ST, and Women entrepreneurs to set up greenfield enterprises in manufacturing, services, or trading sector.",
+            eligibility: "• SC/ST borrowers and/or Women entrepreneurs\n• Age 18+ years\n• For non-individual enterprises: 51% stake held by SC/ST/Woman\n• Greenfield enterprise (first-time venture) only\n• Should not be a defaulter to any bank\n• No prior Stand Up India loan availed",
+            benefits: "• Composite loan: ₹10 lakh to ₹1 crore\n• Covers 75% of project cost (25% can be own contribution)\n• Repayment period: Up to 7 years\n• 18 months moratorium period available\n• Working capital included in composite loan\n• Margin money through convergence with other schemes",
+            howToApply: "Step 1: Visit Stand Up India portal (standupmitra.in) or nearest bank branch\nStep 2: Create profile and submit business plan\nStep 3: Connect with Lead District Manager or branch manager\nStep 4: Bank evaluates project feasibility\nStep 5: Loan sanctioned within 15 working days\nStep 6: Disbursement as per project milestones\nStep 7: Handholding support through SIDBI and DIICs",
+            documentsRequired: "• Aadhaar Card & PAN Card\n• Caste Certificate (for SC/ST)\n• Business Plan / Project Report\n• Address Proof\n• Bank Statements (6 months)\n• Passport-size Photos\n• Quotations for machinery/equipment\n• Experience Certificate (if any)",
+            websiteUrl: "https://www.standupmitra.in",
+            isNew: false,
+            active: true,
+          },
+        ]);
+        console.log("[Seed] Government schemes seeded successfully.");
       }
     } catch (e: any) {
       console.error("[Seed] Error:", e.message);

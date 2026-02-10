@@ -9,7 +9,8 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
   - **Announcements Board**: Government announcements with category filtering (water, electricity, gas, health, scheme, tax, infrastructure), 8 auto-seeded announcements
   - **Emergency SOS**: 6 emergency services (Police 100, Ambulance 108, Fire 101, Gas 1906, Electricity 1912, Water helpline) with alert logging and history
   - **Feedback System**: Star ratings (1-5) for 7 service categories, aggregated ratings summary, personal feedback history
-  - **Enhanced Dashboard**: 4 new colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback) added between main services and bottom tiles
+  - **Govt Schemes**: 10 real government schemes (PM Awas Yojana, Ayushman Bharat, PM Kisan, Ujjwala, Sukanya Samriddhi, PM Vishwakarma, Atal Pension, PM Surya Ghar, Mahtari Vandana, Stand Up India) with eligibility, benefits, step-by-step application guide, and required documents
+  - **Enhanced Dashboard**: 5 new colored feature tiles (Appointments, Announcements, Emergency SOS, Feedback, Govt Schemes) added between main services and bottom tiles
 - **Backend Integration**: All service pages now connected to real APIs
   - ElectricityService, GasService, MunicipalService form submissions → POST /api/complaints
   - ServiceRequest form → POST /api/complaints with real complaint IDs
@@ -43,6 +44,7 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - **feedback** - Service ratings (1-5) with optional comments
 - **announcements** - Government notices with categories, priority, date filtering
 - **emergencyLogs** - Emergency service alert records
+- **govtSchemes** - Government schemes with eligibility, benefits, apply steps, documents
 
 ## Key Files
 - `client/src/lib/faceUtils.ts` - Face detection, 5-step liveness verification, anti-spoof checks
@@ -53,6 +55,7 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - `client/src/pages/Announcements.tsx` - Government announcements with filters
 - `client/src/pages/EmergencySOS.tsx` - Emergency services quick access
 - `client/src/pages/FeedbackPage.tsx` - Service rating and feedback
+- `client/src/pages/GovtSchemes.tsx` - Government schemes with apply steps
 - `client/src/pages/Dashboard.tsx` - Main dashboard with all service tiles
 - `client/src/components/layout/KioskLayout.tsx` - Main layout with language/voice handling
 - `server/routes.ts` - API routes including all CRUD endpoints
@@ -68,6 +71,8 @@ Suvidha Kiosk is a digital citizen services kiosk application built with React (
 - `/api/announcements` - Active announcements with date filtering
 - `/api/emergency` - POST (log alert)
 - `/api/emergency/history` - User emergency history
+- `/api/schemes` - GET (list all active schemes, filter by category)
+- `/api/schemes/:id` - GET (single scheme details)
 - `/api/dashboard/stats/:userId` - Unified dashboard statistics
 
 ## Running

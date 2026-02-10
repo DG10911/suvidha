@@ -22,6 +22,7 @@ import AppointmentBooking from "@/pages/AppointmentBooking";
 import Announcements from "@/pages/Announcements";
 import EmergencySOS from "@/pages/EmergencySOS";
 import FeedbackPage from "@/pages/FeedbackPage";
+import GovtSchemes from "@/pages/GovtSchemes";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/dashboard/announcements" component={Announcements} />
       <Route path="/dashboard/emergency" component={EmergencySOS} />
       <Route path="/dashboard/feedback" component={FeedbackPage} />
+      <Route path="/dashboard/schemes" component={GovtSchemes} />
       <Route path="/service/electricity" component={ElectricityService} />
       <Route path="/service/gas" component={GasService} />
       <Route path="/service/municipal" component={MunicipalService} />

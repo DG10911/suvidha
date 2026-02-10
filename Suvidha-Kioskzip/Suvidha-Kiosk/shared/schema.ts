@@ -162,6 +162,25 @@ export const emergencyLogs = pgTable("emergency_logs", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const govtSchemes = pgTable("govt_schemes", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  ministry: text("ministry").notNull(),
+  category: text("category").notNull().default("general"),
+  summary: text("summary").notNull(),
+  eligibility: text("eligibility").notNull(),
+  benefits: text("benefits").notNull(),
+  howToApply: text("how_to_apply").notNull(),
+  documentsRequired: text("documents_required").notNull(),
+  websiteUrl: text("website_url"),
+  lastDate: text("last_date"),
+  isNew: boolean("is_new").default(true),
+  active: boolean("active").default(true),
+  launchDate: timestamp("launch_date").default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export type GovtScheme = typeof govtSchemes.$inferSelect;
 export type FaceProfile = typeof faceProfiles.$inferSelect;
 export type QrToken = typeof qrTokens.$inferSelect;
 export type Complaint = typeof complaints.$inferSelect;

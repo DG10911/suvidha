@@ -4,7 +4,7 @@ import {
   ChevronRight, Bell, FolderOpen, User, MessageSquare, Shield, Clock,
   CreditCard, Wrench, CircleAlert, Landmark, Type, Wallet,
   Receipt, BellRing, CheckCircle2, Timer, Calendar, Megaphone, ShieldAlert, Star,
-  TrendingUp, Ticket, IndianRupee
+  TrendingUp, Ticket, IndianRupee, BadgeCheck
 } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -140,6 +140,14 @@ const newFeatureTiles = [
     icon: Star,
     color: "bg-yellow-500",
     href: "/dashboard/feedback",
+  },
+  {
+    id: "schemes",
+    title: "Govt Schemes",
+    desc: "Apply for new schemes",
+    icon: BadgeCheck,
+    color: "bg-green-600",
+    href: "/dashboard/schemes",
   },
 ];
 
@@ -299,7 +307,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-5 gap-4">
           {newFeatureTiles.map((tile, index) => (
             <Link key={tile.id} href={tile.href}>
               <motion.div
