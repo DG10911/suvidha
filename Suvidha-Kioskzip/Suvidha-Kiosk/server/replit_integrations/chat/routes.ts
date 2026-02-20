@@ -52,7 +52,7 @@ export function registerChatRoutes(app: Express) {
 
   app.delete("/api/chat/conversations/:id", async (req: Request, res: Response) => {
     try {
-      await chatStorage.deleteConversation(parseInt(req.params.id));
+      await chatStorage.deleteConversation(parseInt(req.params.id as string));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -61,7 +61,7 @@ export function registerChatRoutes(app: Express) {
 
   app.get("/api/chat/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
-      const messages = await chatStorage.getMessagesByConversation(parseInt(req.params.id));
+      const messages = await chatStorage.getMessagesByConversation(parseInt(req.params.id as string));
       res.json(messages);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -70,7 +70,7 @@ export function registerChatRoutes(app: Express) {
 
   app.post("/api/chat/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
-      const conversationId = parseInt(req.params.id);
+      const conversationId = parseInt(req.params.id as string);
       const { content } = req.body;
 
       if (!content) {

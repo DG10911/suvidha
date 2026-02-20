@@ -1,6 +1,7 @@
 import express, { type Express, type Request, type Response } from "express";
+import { toFile } from "openai";
 import { chatStorage } from "../chat/storage.js";
-import { openai, speechToText, ensureCompatibleFormat } from "./client.js";
+import { openai, ensureCompatibleFormat } from "./client.js";
 
 const audioBodyParser = express.json({ limit: "50mb" });
 
@@ -108,25 +109,18 @@ export function registerAudioRoutes(app: Express): void {
       let audioBuffer = ttsCache.get(cacheKey);
 
       if (!audioBuffer) {
-        const ttsPrompt = lang && lang !== "en"
-          ? `Repeat the following text exactly as-is in the same language: ${text}`
-          : `Repeat the following text verbatim: ${text}`;
-
-        const response = await openai.chat.completions.create({
-          model: "gpt-audio",
-          modalities: ["text", "audio"],
-          audio: { voice: "alloy", format: "pcm16" },
-          messages: [
-            { role: "system", content: "You are a text-to-speech assistant. Repeat exactly what the user says, nothing more." },
-            { role: "user", content: ttsPrompt },
-          ],
+        const ttsResponse = await openai.audio.speech.create({
+          model: "tts-1",
+          voice: "alloy",
+          input: text,
+          response_format: "pcm",
         });
 
-        const audioData = (response.choices[0]?.message as any)?.audio?.data ?? "";
-        if (!audioData) {
+        const arrayBuffer = await ttsResponse.arrayBuffer();
+        if (!arrayBuffer || arrayBuffer.byteLength === 0) {
           return res.status(500).json({ error: "No audio generated" });
         }
-        audioBuffer = Buffer.from(audioData, "base64");
+        audioBuffer = Buffer.from(arrayBuffer);
         ttsCache.set(cacheKey, audioBuffer);
         if (ttsCache.size > 200) {
           const firstKey = ttsCache.keys().next().value;
@@ -185,9 +179,20 @@ export function registerAudioRoutes(app: Express): void {
       }
 
       const rawBuffer = Buffer.from(audio, "base64");
-      const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
 
-      const userTranscript = await speechToText(audioBuffer, inputFormat);
+      // Transcribe audio using Whisper (supports webm, wav, mp3, mp4, m4a)
+      let userTranscript: string;
+      try {
+        const { buffer: compatBuffer, format: compatFormat } = await ensureCompatibleFormat(rawBuffer).catch(() => ({ buffer: rawBuffer, format: "webm" as const }));
+        const audioFile = await toFile(compatBuffer, `audio.${compatFormat}`);
+        const transcription = await openai.audio.transcriptions.create({
+          file: audioFile,
+          model: "whisper-1",
+        });
+        userTranscript = transcription.text;
+      } catch {
+        userTranscript = "[Could not transcribe audio]";
+      }
 
       await chatStorage.createMessage(conversationId, "user", userTranscript);
 
@@ -206,28 +211,28 @@ export function registerAudioRoutes(app: Express): void {
 
       res.write(`data: ${JSON.stringify({ type: "user_transcript", data: userTranscript })}\n\n`);
 
-      const stream = await openai.chat.completions.create({
-        model: "gpt-audio",
-        modalities: ["text", "audio"],
-        audio: { voice, format: "pcm16" },
+      // Get text response from gpt-4o-mini
+      const chatResponse = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
         messages: chatHistory,
-        stream: true,
+        max_tokens: 512,
       });
 
-      let assistantTranscript = "";
+      const assistantTranscript = chatResponse.choices[0]?.message?.content || "";
+      res.write(`data: ${JSON.stringify({ type: "transcript", data: assistantTranscript })}\n\n`);
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta as any;
-        if (!delta) continue;
-
-        if (delta?.audio?.transcript) {
-          assistantTranscript += delta.audio.transcript;
-          res.write(`data: ${JSON.stringify({ type: "transcript", data: delta.audio.transcript })}\n\n`);
-        }
-
-        if (delta?.audio?.data) {
-          res.write(`data: ${JSON.stringify({ type: "audio", data: delta.audio.data })}\n\n`);
-        }
+      // Convert response to PCM16 audio via tts-1
+      try {
+        const ttsResponse = await openai.audio.speech.create({
+          model: "tts-1",
+          voice: voice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
+          input: assistantTranscript,
+          response_format: "pcm",
+        });
+        const pcmBuffer = Buffer.from(await ttsResponse.arrayBuffer());
+        res.write(`data: ${JSON.stringify({ type: "audio", data: pcmBuffer.toString("base64") })}\n\n`);
+      } catch (ttsErr) {
+        console.error("TTS error in voice chat:", ttsErr);
       }
 
       await chatStorage.createMessage(conversationId, "assistant", assistantTranscript);
@@ -274,10 +279,10 @@ export function registerAudioRoutes(app: Express): void {
       res.setHeader("Connection", "keep-alive");
 
       const stream = await openai.chat.completions.create({
-        model: "gpt-5-mini",
+        model: "gpt-4o-mini",
         messages: chatHistory,
         stream: true,
-        max_completion_tokens: 512,
+        max_tokens: 512,
       });
 
       let fullResponse = "";
