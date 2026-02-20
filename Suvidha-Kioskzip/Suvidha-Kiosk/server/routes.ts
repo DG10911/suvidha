@@ -31,7 +31,6 @@ import {
 } from "../shared/schema";
 import { eq, desc, and, sql, gte, lte, avg, count } from "drizzle-orm";
 import { registerAudioRoutes } from "./replit_integrations/audio/index.js";
-import { registerChatRoutes } from "./replit_integrations/chat/index.js";
 
 const departmentMap: Record<string, string> = {
   electricity: "CSPDCL - Raipur Division",
@@ -60,7 +59,6 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   registerAudioRoutes(app);
-  registerChatRoutes(app);
 
   // ==================== AUTH ====================
 
