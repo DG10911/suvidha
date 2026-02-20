@@ -1,363 +1,276 @@
 # Suvidha Kiosk — Digital Citizen Services Platform
 
-A full-stack digital kiosk for civic services in Chhattisgarh, India. Built with React + Vite (TypeScript) frontend and Express.js (TypeScript) backend.
+A full-stack digital kiosk for civic services in Chhattisgarh, India.  
+**React + Vite (TypeScript) frontend · Express.js (TypeScript) backend · PostgreSQL · OpenAI**
 
 ---
 
-## Features
-
-- **Face Login** — Liveness-verified face recognition using face-api.js
-- **Mobile OTP Login** — Twilio SMS OTP
-- **QR Code Login** — Scan QR code from profile
-- **Citizen Services** — Electricity, Gas, Water, Municipal, Waste, Infrastructure
-- **Complaint Center** — File, track, and reopen complaints with SLA tracking
-- **Appointments** — Book visits at 6 government offices
-- **Announcements** — Government notices with category filters
-- **Emergency SOS** — Quick access to Police (100), Ambulance (108), Fire (101), etc.
-- **Feedback** — Star ratings for 7 service categories
-- **Govt Schemes** — 10 real schemes (PM Awas, Ayushman Bharat, PM Kisan, etc.)
-- **Certificate Applications** — 8 certificate types with fee calculation and tracking
-- **RTI Filing** — Digital Right to Information applications
-- **Nearby Services** — Directory of 19+ facilities in Raipur
-- **Property Tax Calculator**
-- **Blood Bank Finder** — GPS-based, real-time blood group availability
-- **Grievance Portal** — File against 12 departments with officer assignment
-- **Pension Tracker** — Check status, apply for 5 pension schemes
-- **DigiLocker** — Secure digital document vault (14 document types)
-- **Water Bill & Payment** — 6-month history, wallet payments
-- **AI Voice/Chat Assistant** — OpenAI-powered voice and text chat in 6 languages
-- **Staff / Authority / Contractor Portals** — Role-based dashboards
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, Vite, TypeScript, Tailwind CSS, shadcn/ui |
-| Backend | Express 5, TypeScript, tsx |
-| Database | PostgreSQL (Neon/Supabase compatible) via Drizzle ORM |
-| Face Detection | face-api.js (client-side) |
-| AI / TTS | OpenAI (tts-1, whisper-1, gpt-4o-mini) |
-| SMS / OTP | Twilio |
-| Auth | Session-based + face + OTP + QR |
-
----
-
-## Quick Start (Local Development)
-
-### 1. Prerequisites
-
-- Node.js ≥ 20
-- PostgreSQL database (or [Neon](https://neon.tech) free tier)
-- OpenAI API key (for TTS + AI chat)
-- Twilio account (for OTP — optional for local testing)
-
-### 2. Clone & Install
+## ⚡ Quickest Way to Run (5 minutes)
 
 ```bash
+# 1. Clone
 git clone https://github.com/DG10911/suvidha.git
 cd suvidha/Suvidha-Kioskzip/Suvidha-Kiosk
-npm install
-```
 
-### 3. Configure Environment
+# 2. Run setup script (installs deps, creates .env)
+bash setup.sh
 
-```bash
-cp ../../.env.example .env
-# Edit .env and fill in all values
-```
+# 3. Start a local PostgreSQL database (Docker required)
+docker compose up -d
 
-Required variables:
+# 4. Edit .env — set DATABASE_URL and OPENAI_API_KEY (see below)
+#    DATABASE_URL is already set correctly if you used docker compose above
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `SESSION_SECRET` | Long random string (e.g. `openssl rand -hex 32`) |
-| `OPENAI_API_KEY` | OpenAI API key for TTS + AI assistant |
-| `TWILIO_ACCOUNT_SID` | Twilio Account SID (for OTP SMS) |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
-| `TWILIO_PHONE_NUMBER` | Twilio phone number (e.g. `+15551234567`) |
-
-### 4. Set Up the Database
-
-```bash
-# Push schema to database (creates all tables)
+# 5. Push the database schema (run once)
 npm run db:push
-```
 
-This auto-seeds government schemes and announcements on first server start.
-
-### 5. Run Development Server
-
-```bash
+# 6. Start the app
 npm run dev
 ```
 
-Open [http://localhost:5000](http://localhost:5000)
+Open **http://localhost:5000** in your browser.
+
+> **No Docker?** Use [Neon.tech](https://neon.tech) free cloud PostgreSQL instead — sign up, create a project, paste the connection string as `DATABASE_URL` in `.env`.
+
+---
+
+## Environment Variables
+
+Edit `Suvidha-Kioskzip/Suvidha-Kiosk/.env` (created by `setup.sh`):
+
+| Variable | Required | Where to get it |
+|----------|----------|----------------|
+| `DATABASE_URL` | ✅ Yes | **Local dev only:** `postgresql://suvidha:suvidha@localhost:5432/suvidha` · Cloud: [neon.tech](https://neon.tech) · ⚠️ Use a strong password in production |
+| `SESSION_SECRET` | ✅ Yes | Run `openssl rand -hex 32` to generate — ⚠️ never use the default value in production |
+| `OPENAI_API_KEY` | ✅ Yes (for TTS + AI chat) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `TWILIO_ACCOUNT_SID` | ⬜ Optional | [console.twilio.com](https://console.twilio.com) |
+| `TWILIO_AUTH_TOKEN` | ⬜ Optional | Same as above |
+| `TWILIO_PHONE_NUMBER` | ⬜ Optional | A Twilio number like `+15551234567` |
+| `PORT` | ⬜ Optional | Default `5000` |
+
+> **Without Twilio:** Mobile OTP login will show an error, but all other features (Face Login, QR Login, and everything on the dashboard) work fine.
+
+> **Without OpenAI:** Voice assistant and text-to-speech will be silent, but all other features work fine.
+
+---
+
+## Manual Setup (no Docker)
+
+```bash
+# Install Node.js 20+ from https://nodejs.org
+node --version   # should show v20.x or higher
+
+# Go to the app folder
+cd suvidha/Suvidha-Kioskzip/Suvidha-Kiosk
+
+# Install dependencies
+npm install
+
+# Create .env
+cp ../../.env.example .env
+# Edit .env — fill in DATABASE_URL, SESSION_SECRET, OPENAI_API_KEY
+
+# Create database tables
+npm run db:push
+
+# Start development server (auto-reloads on changes)
+npm run dev
+```
+
+Open **http://localhost:5000**
 
 ---
 
 ## How to Test
 
-### Manual Testing Checklist
+### 1. Sign Up (create your first account)
 
-**Authentication**
-- [ ] Sign up with a fake Aadhaar number (12 digits)
-- [ ] Face login after signup
-- [ ] Mobile OTP login (requires Twilio)
-- [ ] QR code scan login
+1. Go to **http://localhost:5000**
+2. Click **"Sign Up"** (blue card — "New Citizen")
+3. Enter **any 12-digit number** as Aadhaar e.g. `123456789012`  
+   *(The app generates a fake profile from the Aadhaar number — no real data needed)*
+4. Your name, phone, DOB are auto-filled
+5. Click "Proceed" → follow face capture steps (allow camera)
+6. On success you'll land on the **Dashboard**
 
-**Citizen Services**
-- [ ] Electricity → Pay Bill → enter consumer ID → choose payment method
-- [ ] Gas → Book Cylinder
-- [ ] Municipal → Report pothole
-- [ ] Complaint Center → File new complaint → check tracking
+### 2. Log In Again (next time)
 
-**New Features**
-- [ ] Dashboard → Appointment Booking → book a slot
-- [ ] Dashboard → Announcements → filter by category
-- [ ] Dashboard → Emergency SOS → tap a service
-- [ ] Dashboard → Govt Schemes → view PM Kisan details
-- [ ] Dashboard → Certificate → apply for Income Certificate
-- [ ] Dashboard → Blood Banks → sort by distance
-- [ ] Dashboard → Grievance Portal → file and track
-- [ ] Dashboard → DigiLocker → add Aadhaar document
-- [ ] Dashboard → Water Bill → enter connection ID
+| Method | How |
+|--------|-----|
+| **Face Login** | Home → "Face Login" → look at camera |
+| **Mobile OTP** | Home → "Mobile Login" → enter phone from signup → enter OTP (requires Twilio) |
+| **QR Code** | Home → "Scan QR" → scan your profile QR code |
 
-**AI Assistant**
-- [ ] Click the floating bot button (bottom right of any page)
-- [ ] Type a message like "How do I pay my electricity bill?"
-- [ ] Try voice chat (requires microphone permission)
+### 3. Test Each Feature
 
-**Role Portals**
-- [ ] `/staff` — Staff dashboard (view and update complaint statuses)
-- [ ] `/authority` — Authority dashboard (view escalated complaints)
-- [ ] `/contractor` — Contractor dashboard (view assigned work)
+Navigate from the Dashboard:
 
-### Running the Build Check
+| Feature | How to test |
+|---------|-------------|
+| **Electricity** | Dashboard → Electricity → "Pay Bill" → enter any Consumer ID e.g. `1234567890` |
+| **Gas** | Dashboard → Gas Services → "Book Cylinder" |
+| **Complaint** | Dashboard → Complaint Center → fill form → submit |
+| **Appointments** | Dashboard → Appointments → pick office, date, slot |
+| **Announcements** | Dashboard → Announcements → filter by category |
+| **Emergency SOS** | Dashboard → Emergency SOS → tap any service |
+| **Govt Schemes** | Dashboard → Govt Schemes → view PM Kisan details |
+| **Certificates** | Dashboard → Certificates → apply for Income Certificate |
+| **RTI Filing** | Dashboard → RTI → fill form, submit |
+| **Nearby Services** | Dashboard → Nearby Services → search "hospital" |
+| **Property Tax** | Dashboard → Property Tax → enter property details |
+| **Blood Banks** | Dashboard → Blood Banks → filter by blood group |
+| **Grievance** | Dashboard → Grievance Portal → file and get a Grievance ID |
+| **Pension** | Dashboard → Pension Tracker → enter Aadhaar |
+| **DigiLocker** | Dashboard → DigiLocker → add Aadhaar document |
+| **Water Bill** | Dashboard → Water Bill → enter `WB001` as connection ID |
+| **AI Assistant** | Any page → floating bot button (bottom right) → type a question |
+| **Staff Portal** | Go to **http://localhost:5000/staff** |
+| **Authority Portal** | Go to **http://localhost:5000/authority** |
+| **Contractor Portal** | Go to **http://localhost:5000/contractor** |
+
+### 4. Test with Different Languages
+
+Top-right of any page → Globe icon → choose Hindi / छत्तीसगढ़ी / Marathi / Telugu / Tamil.  
+*(TTS voice changes language too if OPENAI_API_KEY is set)*
+
+### 5. Accessibility Features
+
+Top-right → Accessibility icon (person) → toggle High Contrast, Large Text, Screen Reader mode.
+
+---
+
+## Build for Production
 
 ```bash
-npm run check   # TypeScript type checking
-npm run build   # Full production build
+cd suvidha/Suvidha-Kioskzip/Suvidha-Kiosk
+
+# Build client + server into dist/
+npm run build
+
+# Start production server
+NODE_ENV=production node dist/index.cjs
 ```
 
 ---
 
-## Deployment — Host on Your Own Domain
+## Deploy to Your Domain
 
-### Option A: VPS (Recommended — Full Control)
-
-Suitable for: DigitalOcean, Linode, AWS EC2, Hetzner, etc.
-
-#### Step 1 — Provision a server
-
-Get an Ubuntu 22.04 VPS (minimum 1GB RAM). Note its public IP address.
-
-#### Step 2 — Install dependencies on server
+### Option A: VPS (DigitalOcean / Linode / AWS EC2)
 
 ```bash
-# SSH into your server
-ssh root@YOUR_SERVER_IP
-
-# Install Node.js 20
+# On your server — install Node 20, PM2, Nginx
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Install PM2 (process manager)
+sudo apt-get install -y nodejs nginx
 npm install -g pm2
 
-# Install Nginx
-sudo apt install -y nginx
-
-# Install Certbot (for HTTPS / SSL)
-sudo apt install -y certbot python3-certbot-nginx
-```
-
-#### Step 3 — Deploy the app
-
-```bash
-# On your local machine: build the project
-cd suvidha/Suvidha-Kioskzip/Suvidha-Kiosk
+# Deploy
+git clone https://github.com/DG10911/suvidha.git /var/www/suvidha
+cd /var/www/suvidha/Suvidha-Kioskzip/Suvidha-Kiosk
+npm install
+# Create .env with your production values
+npm run db:push
 npm run build
 
-# Copy files to server (or use git clone on the server)
-scp -r . root@YOUR_SERVER_IP:/var/www/suvidha/
-
-# On server: install dependencies and set up env
-cd /var/www/suvidha
-npm install --production
-cp /path/to/.env .env   # or create .env manually
-```
-
-#### Step 4 — Start the app with PM2
-
-```bash
-cd /var/www/suvidha
+# Start with PM2
 pm2 start "node dist/index.cjs" --name suvidha
-pm2 startup    # Auto-start on reboot
-pm2 save
+pm2 startup && pm2 save
 ```
 
-#### Step 5 — Configure Nginx as reverse proxy
-
+**Nginx config** (`/etc/nginx/sites-available/suvidha`):
 ```nginx
-# /etc/nginx/sites-available/suvidha
 server {
     listen 80;
     server_name yourdomain.com www.yourdomain.com;
-
     location / {
         proxy_pass http://localhost:5000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
         proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 120s;
     }
 }
 ```
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/suvidha /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
+sudo nginx -t && sudo systemctl reload nginx
 
-#### Step 6 — Point your domain to the server
-
-In your domain registrar's DNS settings, add:
-- **A record**: `@` → `YOUR_SERVER_IP`
-- **A record**: `www` → `YOUR_SERVER_IP`
-
-Wait for DNS propagation (up to 24 hours, usually 15–30 minutes).
-
-#### Step 7 — Enable HTTPS (free SSL with Let's Encrypt)
-
-```bash
+# Free HTTPS with Let's Encrypt
+sudo apt install certbot python3-certbot-nginx -y
 sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
-# Follow prompts — certbot auto-configures Nginx for HTTPS
 ```
 
-Your app will now be live at `https://yourdomain.com` ✅
+**DNS**: Add an **A record** pointing `yourdomain.com` → your server's IP address.
 
 ---
 
-### Option B: Railway (Easiest — No Server Management)
+### Option B: Railway (Easiest — no server management)
 
-1. Go to [railway.app](https://railway.app) and sign in with GitHub
-2. Click **New Project** → **Deploy from GitHub repo** → select `DG10911/suvidha`
-3. Set the **Root Directory** to `Suvidha-Kioskzip/Suvidha-Kiosk`
-4. Add a **PostgreSQL** database service in the same project
-5. Set environment variables in Railway dashboard (copy from `.env.example`)
-6. Railway auto-builds and deploys on every git push
-7. Go to **Settings → Domains** → add your custom domain
-8. Update DNS: add the CNAME record Railway provides
+1. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub**
+2. Select `DG10911/suvidha`, set **Root Directory** to `Suvidha-Kioskzip/Suvidha-Kiosk`
+3. Add a **PostgreSQL** database plugin in the same project
+4. Set env vars in Railway dashboard (DATABASE_URL is auto-injected)
+5. Railway auto-builds and deploys on every push
+6. **Settings → Domains** → Add custom domain → add the CNAME in your DNS
 
 ---
 
 ### Option C: Render
 
-1. Go to [render.com](https://render.com) → **New Web Service**
-2. Connect GitHub repo, set root directory to `Suvidha-Kioskzip/Suvidha-Kiosk`
-3. Build command: `npm install && npm run build`
-4. Start command: `npm start`
-5. Add PostgreSQL via Render's database service
-6. Add environment variables
-7. Add custom domain in **Settings → Custom Domains**
-
----
-
-### Option D: Fly.io
-
-```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-
-cd suvidha/Suvidha-Kioskzip/Suvidha-Kiosk
-fly launch           # Follow prompts
-fly secrets set DATABASE_URL="..." OPENAI_API_KEY="..." SESSION_SECRET="..."
-fly deploy
-
-# Add custom domain
-fly certs add yourdomain.com
-```
-
----
-
-## Database Schema
-
-All tables are auto-created via `npm run db:push`. Key tables:
-
-| Table | Purpose |
-|-------|---------|
-| `users` | Citizen accounts with role (citizen/staff/contractor/authority) |
-| `face_profiles` | Face descriptors for face login |
-| `complaints` | All service complaints with SLA tracking |
-| `appointments` | Office visit bookings |
-| `announcements` | Government notices |
-| `govt_schemes` | 10 seeded government schemes |
-| `certificate_applications` | 8 certificate types |
-| `rti_applications` | RTI filings |
-| `grievances` | Public grievances |
-| `pension_records` | Pension registrations |
-| `digi_locker` | Digital documents |
-| `water_bills` | Water billing history |
-| `conversations` + `messages` | AI chat history |
-
----
-
-## API Overview
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/auth/signup` | POST | Register with Aadhaar + face |
-| `/api/auth/login/face` | POST | Face recognition login |
-| `/api/auth/login/otp/send` | POST | Send OTP via Twilio |
-| `/api/auth/login/otp/verify` | POST | Verify OTP |
-| `/api/complaints` | POST | File a complaint |
-| `/api/appointments` | GET/POST | List/book appointments |
-| `/api/appointments/:id/cancel` | PATCH | Cancel appointment |
-| `/api/feedback` | GET/POST | Ratings |
-| `/api/announcements` | GET | Active notices |
-| `/api/emergency` | POST | Log emergency alert |
-| `/api/schemes` | GET | Government schemes |
-| `/api/certificates/apply` | POST | Apply for certificate |
-| `/api/rti/apply` | POST | File RTI |
-| `/api/nearby-services` | GET | Public facilities directory |
-| `/api/blood-banks` | GET | Blood banks with availability |
-| `/api/grievances/file` | POST | File grievance |
-| `/api/pension/register` | POST | Apply for pension |
-| `/api/digilocker/add` | POST | Add document |
-| `/api/water/bills` | GET | Water billing history |
-| `/api/tts` | POST | Text-to-speech (PCM16 audio) |
-| `/api/text-chat` | POST | AI assistant text chat (SSE) |
-| `/api/conversations` | POST | Create voice chat session |
-| `/api/conversations/:id/messages` | POST | Send voice message (SSE) |
-| `/api/staff/dashboard/:userId` | GET | Staff portal data |
-| `/api/authority/dashboard/:userId` | GET | Authority portal data |
-| `/api/contractor/dashboard/:userId` | GET | Contractor portal data |
+1. [render.com](https://render.com) → **New Web Service** → connect GitHub
+2. Root directory: `Suvidha-Kioskzip/Suvidha-Kiosk`
+3. Build: `npm install && npm run build` · Start: `npm start`
+4. Add a **PostgreSQL** database, copy the internal URL to `DATABASE_URL`
+5. Add other env vars, then **Settings → Custom Domains**
 
 ---
 
 ## Troubleshooting
 
-**"DATABASE_URL must be set" error**
-→ Make sure `.env` is in `Suvidha-Kioskzip/Suvidha-Kiosk/` (same folder as `package.json`)
+| Problem | Fix |
+|---------|-----|
+| `DATABASE_URL must be set` | Create/edit `.env` in `Suvidha-Kioskzip/Suvidha-Kiosk/` folder |
+| `Cannot connect to database` | Make sure PostgreSQL is running: `docker compose up -d` |
+| Face login doesn't open camera | Must use `https://` or `localhost` (camera API requires secure context) |
+| TTS / AI assistant silent | Check `OPENAI_API_KEY` is set and has billing enabled |
+| OTP not received | Twilio credentials missing or phone format wrong — use `+91XXXXXXXXXX` for India |
+| Port already in use | Change `PORT=5001` in `.env` |
+| `npm run db:push` fails | Check your `DATABASE_URL` is reachable and correct |
 
-**Face login not working**
-→ Ensure HTTPS or localhost (camera requires secure context)
-→ Allow camera permission in browser
+---
 
-**TTS/AI assistant silent**
-→ Check `OPENAI_API_KEY` is set and has billing enabled
-→ Check browser console for errors
+## Project Structure
 
-**OTP not received**
-→ Verify Twilio credentials and phone number format (+91XXXXXXXXXX for India)
+```
+Suvidha-Kioskzip/Suvidha-Kiosk/
+├── client/src/
+│   ├── pages/          ← All UI pages (Dashboard, FaceLogin, etc.)
+│   ├── components/     ← Shared components (KioskLayout, VoiceAgent, etc.)
+│   └── lib/            ← Utilities (faceUtils, speechHelper, translations)
+├── server/
+│   ├── index.ts        ← Express entry point
+│   ├── routes.ts       ← All API routes + auto-seeding logic
+│   ├── twilio.ts       ← OTP via Twilio
+│   └── replit_integrations/
+│       ├── audio/      ← TTS (tts-1) + voice chat (whisper-1 + gpt-4o-mini)
+│       └── chat/       ← Chat storage + AI routes
+├── shared/schema.ts    ← Drizzle ORM schema (all DB tables)
+├── db/index.ts         ← DB connection
+├── setup.sh            ← First-time setup script
+├── docker-compose.yml  ← Local PostgreSQL
+└── .env.example        ← Environment variable template
+```
 
-**Build fails**
-→ Run `npm run check` for TypeScript errors
-→ Ensure Node.js ≥ 20
+---
+
+## Features
+
+- **Face Login** — Liveness-verified (5-step anti-spoof)
+- **Mobile OTP** — Twilio SMS
+- **QR Code Login**
+- **Complaint Center** — File, track, SLA countdown
+- **14 Dashboard Services** — Appointments, Schemes, Certificates, RTI, Blood Banks, Grievance, Pension, DigiLocker, Water Bill, and more
+- **AI Voice/Chat Assistant** — Whisper STT + GPT-4o-mini + TTS-1, 6 languages
+- **Staff / Authority / Contractor Portals** — Role-based dashboards
+- **6 Languages** — English, Hindi, Chhattisgarhi, Marathi, Telugu, Tamil
