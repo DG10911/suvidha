@@ -11,6 +11,7 @@ export const users = pgTable("users", {
   phone: text("phone"),
   aadhaar: text("aadhaar"),
   suvidhaId: text("suvidha_id").unique(),
+  role: text("role").notNull().default("citizen"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -310,5 +311,40 @@ export type Appointment = typeof appointments.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
 export type Announcement = typeof announcements.$inferSelect;
 export type EmergencyLog = typeof emergencyLogs.$inferSelect;
+
+export const staffProfiles = pgTable("staff_profiles", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  employeeId: text("employee_id").notNull().unique(),
+  department: text("department").notNull(),
+  designation: text("designation").notNull(),
+  joiningDate: text("joining_date"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const contractorProfiles = pgTable("contractor_profiles", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  contractorId: text("contractor_id").notNull().unique(),
+  company: text("company").notNull(),
+  workType: text("work_type").notNull(),
+  licenseNumber: text("license_number"),
+  activeContracts: integer("active_contracts").default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const authorityProfiles = pgTable("authority_profiles", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  authorityId: text("authority_id").notNull().unique(),
+  department: text("department").notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
+  level: text("level").notNull().default("district"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export type StaffProfile = typeof staffProfiles.$inferSelect;
+export type ContractorProfile = typeof contractorProfiles.$inferSelect;
+export type AuthorityProfile = typeof authorityProfiles.$inferSelect;
 
 export * from "./models/chat";

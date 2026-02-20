@@ -32,6 +32,9 @@ import GrievancePortal from "@/pages/GrievancePortal";
 import PensionTracker from "@/pages/PensionTracker";
 import DigiLockerPage from "@/pages/DigiLockerPage";
 import WaterBillPage from "@/pages/WaterBillPage";
+import StaffDashboard from "@/pages/StaffDashboard";
+import AuthorityDashboard from "@/pages/AuthorityDashboard";
+import ContractorDashboard from "@/pages/ContractorDashboard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -70,6 +73,9 @@ function Router() {
       <Route path="/login/:method" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/thank-you" component={ThankYou} />
+      <Route path="/staff" component={StaffDashboard} />
+      <Route path="/authority" component={AuthorityDashboard} />
+      <Route path="/contractor" component={ContractorDashboard} />
       <Route component={NotFound} />
     </Switch>
   );

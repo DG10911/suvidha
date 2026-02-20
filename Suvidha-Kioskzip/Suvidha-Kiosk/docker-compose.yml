@@ -1,0 +1,21 @@
+# Local development only — provides a PostgreSQL database so you don't need an external service.
+# Usage:  docker compose up -d   (starts postgres in background)
+#         docker compose down     (stops and removes the container)
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: suvidha
+      POSTGRES_PASSWORD: suvidha
+      POSTGRES_DB: suvidha
+    ports:
+      - "5432:5432"
+    volumes:
+      - suvidha_pg_data:/var/lib/postgresql/data
+
+volumes:
+  suvidha_pg_data:
