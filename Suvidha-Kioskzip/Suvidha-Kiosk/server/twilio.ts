@@ -1,50 +1,18 @@
 import twilio from 'twilio';
 
-let connectionSettings: any;
-
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? 'repl ' + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+export function getTwilioClient() {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) {
+    throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must be set');
   }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=twilio',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.account_sid || !connectionSettings.settings.api_key || !connectionSettings.settings.api_key_secret)) {
-    throw new Error('Twilio not connected');
-  }
-  return {
-    accountSid: connectionSettings.settings.account_sid,
-    apiKey: connectionSettings.settings.api_key,
-    apiKeySecret: connectionSettings.settings.api_key_secret,
-    phoneNumber: connectionSettings.settings.phone_number
-  };
+  return twilio(accountSid, authToken);
 }
 
-export async function getTwilioClient() {
-  const { accountSid, apiKey, apiKeySecret } = await getCredentials();
-  return twilio(apiKey, apiKeySecret, {
-    accountSid: accountSid
-  });
-}
-
-export async function getTwilioFromPhoneNumber() {
-  const { phoneNumber } = await getCredentials();
-  return phoneNumber;
+export function getTwilioFromPhoneNumber() {
+  const phone = process.env.TWILIO_PHONE_NUMBER;
+  if (!phone) throw new Error('TWILIO_PHONE_NUMBER must be set');
+  return phone;
 }
 
 const otpStore = new Map<string, { otp: string; expiresAt: number }>();
@@ -56,13 +24,11 @@ function generateOtp(): string {
 export async function sendOtp(toPhone: string): Promise<{ success: boolean; message: string }> {
   const otp = generateOtp();
   const expiresAt = Date.now() + 5 * 60 * 1000;
-
   otpStore.set(toPhone, { otp, expiresAt });
 
   try {
-    const client = await getTwilioClient();
-    const fromPhone = await getTwilioFromPhoneNumber();
-
+    const client = getTwilioClient();
+    const fromPhone = getTwilioFromPhoneNumber();
     const formattedTo = toPhone.startsWith('+') ? toPhone : '+91' + toPhone;
 
     await client.messages.create({

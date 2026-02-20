@@ -28,9 +28,13 @@ import {
   pensionPayments,
   digiLocker,
   waterBills,
+  staffProfiles,
+  contractorProfiles,
+  authorityProfiles,
 } from "../shared/schema";
 import { eq, desc, and, sql, gte, lte, avg, count } from "drizzle-orm";
 import { registerAudioRoutes } from "./replit_integrations/audio/index.js";
+import { registerChatRoutes } from "./replit_integrations/chat/index.js";
 
 const departmentMap: Record<string, string> = {
   electricity: "CSPDCL - Raipur Division",
@@ -59,6 +63,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   registerAudioRoutes(app);
+  registerChatRoutes(app);
 
   // ==================== AUTH ====================
 
@@ -2711,6 +2716,86 @@ export async function registerRoutes(
       console.error("[Seed] Error:", e.message);
     }
   })();
+
+  // ==================== STAFF ====================
+
+  app.get("/api/staff/dashboard/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const [profile] = await db.select().from(staffProfiles).where(eq(staffProfiles.userId, userId));
+      const allComplaints = await db.select().from(complaints).orderBy(desc(complaints.createdAt)).limit(20);
+      const pending = allComplaints.filter(c => c.status === "submitted" || c.status === "in_progress").length;
+      const resolved = allComplaints.filter(c => c.status === "resolved" || c.status === "closed").length;
+      res.json({ profile, stats: { total: allComplaints.length, pending, resolved }, recentComplaints: allComplaints.slice(0, 5) });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/staff/complaints/:id/status", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { status, resolution, assignedTo } = req.body;
+      const [updated] = await db.update(complaints).set({ status, resolution, assignedTo, updatedAt: new Date() }).where(eq(complaints.id, parseInt(id))).returning();
+      res.json({ success: true, complaint: updated });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== CONTRACTOR ====================
+
+  app.get("/api/contractor/dashboard/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const [profile] = await db.select().from(contractorProfiles).where(eq(contractorProfiles.userId, userId));
+      const myComplaints = await db.select().from(complaints).where(eq(complaints.assignedTo, userId)).orderBy(desc(complaints.createdAt)).limit(20);
+      const active = myComplaints.filter(c => c.status === "in_progress").length;
+      const completed = myComplaints.filter(c => c.status === "resolved" || c.status === "closed").length;
+      res.json({ profile, stats: { total: myComplaints.length, active, completed }, assignedWork: myComplaints.slice(0, 5) });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/contractor/work/:id/update", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { status, notes } = req.body;
+      const [updated] = await db.update(complaints).set({ status, resolution: notes, updatedAt: new Date() }).where(eq(complaints.id, parseInt(id))).returning();
+      res.json({ success: true, complaint: updated });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== AUTHORITY ====================
+
+  app.get("/api/authority/dashboard/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const [profile] = await db.select().from(authorityProfiles).where(eq(authorityProfiles.userId, userId));
+      const allComplaints = await db.select().from(complaints).orderBy(desc(complaints.createdAt));
+      const overdue = allComplaints.filter(c => c.slaDeadline && new Date(c.slaDeadline) < new Date() && c.status !== "resolved" && c.status !== "closed").length;
+      const byStatus = { submitted: 0, in_progress: 0, resolved: 0, closed: 0 } as Record<string, number>;
+      allComplaints.forEach(c => { byStatus[c.status] = (byStatus[c.status] || 0) + 1; });
+      res.json({ profile, stats: { total: allComplaints.length, overdue, byStatus }, escalated: allComplaints.filter(c => c.urgency === "high").slice(0, 5) });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/authority/escalate/:complaintId", async (req: Request, res: Response) => {
+    try {
+      const { complaintId } = req.params;
+      const { reason } = req.body;
+      const [updated] = await db.update(complaints).set({ urgency: "high", updatedAt: new Date() }).where(eq(complaints.complaintId, complaintId)).returning();
+      await db.insert(complaintTimeline).values({ complaintId, status: "escalated", note: reason || "Escalated by authority" });
+      res.json({ success: true, complaint: updated });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   return server;
 }
