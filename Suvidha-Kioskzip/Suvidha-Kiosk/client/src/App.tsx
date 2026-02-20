@@ -32,6 +32,7 @@ import GrievancePortal from "@/pages/GrievancePortal";
 import PensionTracker from "@/pages/PensionTracker";
 import DigiLockerPage from "@/pages/DigiLockerPage";
 import WaterBillPage from "@/pages/WaterBillPage";
+import AIAgent from "@/pages/AIAgent";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -58,6 +59,7 @@ function Router() {
       <Route path="/dashboard/pension" component={PensionTracker} />
       <Route path="/dashboard/digilocker" component={DigiLockerPage} />
       <Route path="/dashboard/water-bill" component={WaterBillPage} />
+      <Route path="/dashboard/ai-agent" component={AIAgent} />
       <Route path="/service/electricity" component={ElectricityService} />
       <Route path="/service/gas" component={GasService} />
       <Route path="/service/municipal" component={MunicipalService} />
