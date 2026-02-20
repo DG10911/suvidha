@@ -5,7 +5,7 @@ import {
   CreditCard, Wrench, CircleAlert, Landmark, Type, Wallet,
   Receipt, BellRing, CheckCircle2, Timer, Calendar, Megaphone, ShieldAlert, Star,
   TrendingUp, Ticket, IndianRupee, BadgeCheck, ScrollText, Scale, MapPin, Calculator,
-  Droplet, AlertOctagon, PiggyBank, FolderLock, Bot
+  Droplet, AlertOctagon, PiggyBank, FolderLock
 } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -221,14 +221,6 @@ const newFeatureTiles = [
     icon: Droplets,
     color: "bg-cyan-600",
     href: "/dashboard/water-bill",
-  },
-  {
-    id: "ai-agent",
-    title: "AI Assistant",
-    desc: "Chat with Suvidha AI",
-    icon: Bot,
-    color: "bg-violet-700",
-    href: "/dashboard/ai-agent",
   },
 ];
 
